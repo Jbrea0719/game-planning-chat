@@ -51,6 +51,12 @@ export default function ChatPage() {
   const [showModal, setShowModal] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [docContent, setDocContent] = useState("");
+  const [docLoading, setDocLoading] = useState(false);
+  const [showDocModal, setShowDocModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedPairIds, setSelectedPairIds] = useState<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -212,6 +218,70 @@ export default function ChatPage() {
     await fetch("/api/messages", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pair_id: pairId }) });
   }
 
+  function enterSelectMode() {
+    // 선택 모드 진입 시 활성 대화 전체 기본 선택
+    const allIds = new Set(pairs.filter((p) => !p.is_deleted).map((p) => p.pair_id));
+    setSelectedPairIds(allIds);
+    setSelectMode(true);
+  }
+
+  function togglePairSelect(pairId: string) {
+    setSelectedPairIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(pairId)) next.delete(pairId);
+      else next.add(pairId);
+      return next;
+    });
+  }
+
+  function cancelSelectMode() {
+    setSelectMode(false);
+    setSelectedPairIds(new Set());
+  }
+
+  async function generateDocument() {
+    const selectedMsgs = pairs
+      .filter((p) => !p.is_deleted && selectedPairIds.has(p.pair_id))
+      .flatMap((p) => [
+        { role: p.user.role, content: p.user.content },
+        { role: p.assistant.role, content: p.assistant.content },
+      ]);
+    if (selectedMsgs.length === 0) return;
+
+    setSelectMode(false);
+    setDocContent("");
+    setDocLoading(true);
+    setShowDocModal(true);
+
+    try {
+      const response = await fetch("/api/document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: selectedMsgs }),
+      });
+      if (!response.ok || !response.body) throw new Error("오류");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value);
+        setDocContent(text);
+      }
+    } catch {
+      setDocContent("기획서 생성 중 오류가 발생했습니다.");
+    } finally {
+      setDocLoading(false);
+    }
+  }
+
+  async function copyDocument() {
+    await navigator.clipboard.writeText(docContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
@@ -255,6 +325,53 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* 기획서 모달 */}
+      {showDocModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl" style={{ backgroundColor: "#0f1628", border: `1px solid ${SILVER_FAINT}` }}>
+            {/* 모달 헤더 */}
+            <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: `1px solid ${SILVER_FAINT}` }}>
+              <div className="flex items-center gap-2">
+                <span style={{ color: SILVER }}>📄</span>
+                <h2 className="text-sm font-bold" style={{ color: SILVER }}>기획서</h2>
+                {docLoading && <span className="text-xs animate-pulse" style={{ color: SILVER_DIM }}>작성 중...</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                {!docLoading && docContent && (
+                  <button
+                    onClick={copyDocument}
+                    className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                    style={{ backgroundColor: copied ? "rgba(100,200,100,0.2)" : SILVER_FAINT, border: `1px solid ${SILVER_DIM}`, color: copied ? "#90d090" : SILVER }}
+                  >
+                    {copied ? "✓ 복사됨" : "복사"}
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowDocModal(false)}
+                  className="text-xs px-3 py-1.5 rounded-lg"
+                  style={{ backgroundColor: SILVER_FAINT, color: SILVER_DIM }}
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+            {/* 모달 내용 */}
+            <div className="flex-1 overflow-y-auto px-6 py-4" style={{ scrollbarWidth: "thin", scrollbarColor: `${SILVER_DIM} transparent` }}>
+              {docLoading && !docContent && (
+                <div className="flex items-center gap-2 py-8 justify-center">
+                  <span className="animate-pulse" style={{ color: SILVER_DIM }}>대화 내용을 분석해서 기획서를 작성하고 있어요...</span>
+                </div>
+              )}
+              {docContent && (
+                <div className="prose prose-sm max-w-none" style={{ color: "#e0e8f0" }}>
+                  <ReactMarkdown>{fixMarkdown(docContent)}</ReactMarkdown>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 헤더 */}
       <header className="px-6 py-4 flex items-center gap-4" style={{ backgroundColor: "rgba(0,0,0,0.4)", borderBottom: `1px solid ${SILVER_FAINT}` }}>
         <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}`, boxShadow: `0 0 15px rgba(192,200,216,0.2)` }}>
@@ -264,18 +381,47 @@ export default function ChatPage() {
           <p className="font-bold text-sm" style={{ color: SILVER }}>조던</p>
           <p className="text-xs" style={{ color: SILVER_DIM }}>영웅수집형 게임 기획 전문가 · 가챠 · 밸런스 · BM · 컨텐츠 설계</p>
         </div>
-        {sessionId && (
-          <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {activePairs.length > 0 && !selectMode && (
+            <button
+              onClick={enterSelectMode}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium"
+              style={{ backgroundColor: SILVER, color: "#0a0e1a" }}
+            >
+              📄 기획서 작성
+            </button>
+          )}
+          {selectMode && (
+            <>
+              <span className="text-xs" style={{ color: SILVER_DIM }}>{selectedPairIds.size}개 선택됨</span>
+              <button
+                onClick={generateDocument}
+                disabled={selectedPairIds.size === 0}
+                className="text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-40"
+                style={{ backgroundColor: SILVER, color: "#0a0e1a" }}
+              >
+                ✓ 작성 시작
+              </button>
+              <button
+                onClick={cancelSelectMode}
+                className="text-xs px-3 py-1.5 rounded-lg"
+                style={{ backgroundColor: SILVER_FAINT, color: SILVER_DIM }}
+              >
+                취소
+              </button>
+            </>
+          )}
+          {sessionId && (
             <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: SILVER_FAINT, border: `1px solid rgba(192,200,216,0.3)`, color: SILVER }}>
               {sessionId}
             </span>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
       {/* 대화 영역 */}
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-6" style={{ scrollbarWidth: "thin", scrollbarColor: `${SILVER_DIM} transparent` }}>
-        <div className="max-w-2xl mx-auto space-y-6">
+        <div className={`max-w-2xl mx-auto space-y-6 ${selectMode ? "pl-8" : ""}`}>
 
           {activePairs.length === 0 && !streamingPair && (
             <div className="text-center mt-20">
@@ -287,7 +433,19 @@ export default function ChatPage() {
 
           {/* 활성 대화 쌍 */}
           {activePairs.map((pair) => (
-            <div key={pair.pair_id} className="space-y-3 group">
+            <div key={pair.pair_id} className={`space-y-3 group relative ${selectMode ? "cursor-pointer" : ""}`} onClick={selectMode ? () => togglePairSelect(pair.pair_id) : undefined}>
+              {/* 선택 모드 체크박스 */}
+              {selectMode && (
+                <div className="absolute -left-6 top-1 flex items-start">
+                  <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0" style={{ backgroundColor: selectedPairIds.has(pair.pair_id) ? SILVER : "transparent", border: `2px solid ${selectedPairIds.has(pair.pair_id) ? SILVER : SILVER_DIM}` }}>
+                    {selectedPairIds.has(pair.pair_id) && <span style={{ color: "#0a0e1a", fontSize: "10px", fontWeight: "bold" }}>✓</span>}
+                  </div>
+                </div>
+              )}
+              {/* 선택된 대화 하이라이트 */}
+              {selectMode && (
+                <div className="absolute inset-0 rounded-xl pointer-events-none" style={{ backgroundColor: selectedPairIds.has(pair.pair_id) ? "rgba(192,200,216,0.05)" : "transparent", border: selectedPairIds.has(pair.pair_id) ? `1px solid ${SILVER_FAINT}` : "1px solid transparent" }} />
+              )}
 
               {/* 내 질문 */}
               <div className="flex justify-end items-end gap-2">
