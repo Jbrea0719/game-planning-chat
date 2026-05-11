@@ -332,7 +332,41 @@ export default function ChatPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function downloadTxt(content: string, filename: string) {
+  function getDateStr() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}${m}${d}`;
+  }
+
+  function getUniqueFilename(base: string): string {
+    const key = "jordan_filenames";
+    const used: string[] = JSON.parse(localStorage.getItem(key) ?? "[]");
+    const usedSet = new Set(used);
+    let name = base;
+    let i = 2;
+    while (usedSet.has(name)) { name = `${base}_(${i})`; i++; }
+    usedSet.add(name);
+    localStorage.setItem(key, JSON.stringify([...usedSet]));
+    return name;
+  }
+
+  async function getTitle(content: string): Promise<string> {
+    try {
+      const res = await fetch("/api/title", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json();
+      return data.title || "조던답변";
+    } catch { return "조던답변"; }
+  }
+
+  async function downloadTxt(content: string) {
+    const title = await getTitle(content);
+    const filename = getUniqueFilename(`${title}_${getDateStr()}`);
     const clean = content
       .replace(/\*\*(.+?)\*\*/g, "$1")
       .replace(/\*(.+?)\*/g, "$1")
@@ -344,7 +378,9 @@ export default function ChatPage() {
     URL.revokeObjectURL(url);
   }
 
-  function downloadWord(content: string, filename: string) {
+  async function downloadWord(content: string) {
+    const title = await getTitle(content);
+    const filename = getUniqueFilename(`${title}_${getDateStr()}`);
     const html = content
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/^#### (.+)$/gm, "<h4>$1</h4>")
@@ -602,14 +638,14 @@ hr{border:1px solid #ccc;margin:1em 0}
                     <div className="flex items-center gap-2 ml-1 mt-1">
                       <span className="text-xs" style={{ color: SILVER_DIM }}>다운로드:</span>
                       <button
-                        onClick={() => downloadTxt(pair.assistant.content, `조던_${pair.pair_id.slice(0, 8)}`)}
+                        onClick={() => downloadTxt(pair.assistant.content)}
                         className="text-xs px-2.5 py-1 rounded-lg"
                         style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
                       >
                         TXT
                       </button>
                       <button
-                        onClick={() => downloadWord(pair.assistant.content, `조던_${pair.pair_id.slice(0, 8)}`)}
+                        onClick={() => downloadWord(pair.assistant.content)}
                         className="text-xs px-2.5 py-1 rounded-lg"
                         style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
                       >
@@ -646,14 +682,14 @@ hr{border:1px solid #ccc;margin:1em 0}
                       <div className="flex items-center gap-2 ml-1 mt-1">
                         <span className="text-xs" style={{ color: SILVER_DIM }}>다운로드:</span>
                         <button
-                          onClick={() => downloadTxt(pair.detail_content!, `조던_자세한답변_${pair.pair_id.slice(0, 8)}`)}
+                          onClick={() => downloadTxt(pair.detail_content!)}
                           className="text-xs px-2.5 py-1 rounded-lg"
                           style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
                         >
                           TXT
                         </button>
                         <button
-                          onClick={() => downloadWord(pair.detail_content!, `조던_자세한답변_${pair.pair_id.slice(0, 8)}`)}
+                          onClick={() => downloadWord(pair.detail_content!)}
                           className="text-xs px-2.5 py-1 rounded-lg"
                           style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
                         >
