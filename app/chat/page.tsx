@@ -636,6 +636,23 @@ hr{border:1px solid #ccc;margin:1em 0}
                         <ReactMarkdown>{fixMarkdown(pair.detail_content)}</ReactMarkdown>
                       </div>
                     </div>
+                    <div className="flex items-center gap-2 ml-1 mt-1">
+                      <span className="text-xs" style={{ color: SILVER_DIM }}>다운로드:</span>
+                      <button
+                        onClick={() => downloadTxt(pair.detail_content!, `조던_자세한답변_${pair.pair_id.slice(0, 8)}`)}
+                        className="text-xs px-2.5 py-1 rounded-lg"
+                        style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
+                      >
+                        TXT
+                      </button>
+                      <button
+                        onClick={() => downloadWord(pair.detail_content!, `조던_자세한답변_${pair.pair_id.slice(0, 8)}`)}
+                        className="text-xs px-2.5 py-1 rounded-lg"
+                        style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
+                      >
+                        Word
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
