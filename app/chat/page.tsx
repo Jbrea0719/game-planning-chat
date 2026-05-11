@@ -124,7 +124,18 @@ export default function ChatPage() {
     setShowScrollBtn(distFromBottom > 200);
   }
 
+  function getDetailCache(): Record<string, string> {
+    try { return JSON.parse(localStorage.getItem("jordan_detail_cache") ?? "{}"); } catch { return {}; }
+  }
+
+  function saveDetailCache(pairId: string, content: string) {
+    const cache = getDetailCache();
+    cache[pairId] = content;
+    localStorage.setItem("jordan_detail_cache", JSON.stringify(cache));
+  }
+
   function groupIntoPairs(messages: Message[]): MessagePair[] {
+    const cache = getDetailCache();
     const pairMap = new Map<string, { user?: Message; assistant?: Message; is_deleted: boolean }>();
     const order: string[] = [];
     for (const msg of messages) {
@@ -138,7 +149,11 @@ export default function ChatPage() {
     return order.map((pid) => {
       const entry = pairMap.get(pid)!;
       if (!entry.user || !entry.assistant) return null;
-      return { pair_id: pid, user: entry.user, assistant: entry.assistant, is_deleted: entry.is_deleted };
+      const cached = cache[pid];
+      return {
+        pair_id: pid, user: entry.user, assistant: entry.assistant, is_deleted: entry.is_deleted,
+        ...(cached ? { detail_content: cached, detail_shown: true } : {}),
+      };
     }).filter(Boolean) as MessagePair[];
   }
 
@@ -230,6 +245,7 @@ export default function ChatPage() {
         text += decoder.decode(value);
         setPairs((prev) => prev.map((p) => p.pair_id === pairId ? { ...p, detail_content: text } : p));
       }
+      saveDetailCache(pairId, text);
     } catch {
       setPairs((prev) => prev.map((p) => p.pair_id === pairId ? { ...p, detail_content: "오류가 발생했습니다." } : p));
     } finally {
@@ -541,8 +557,20 @@ export default function ChatPage() {
                     {pair.detail_loading ? "⏳ 불러오는 중..." : pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기"}
                   </button>
                   {pair.detail_shown && pair.detail_content && (
-                    <div className="px-4 py-3 rounded-2xl text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(192,200,216,0.07)", border: `1px solid rgba(192,200,216,0.25)`, color: "#e0e8f0" }}>
-                      <ReactMarkdown>{fixMarkdown(pair.detail_content)}</ReactMarkdown>
+                    <div className="relative">
+                      <button
+                        onClick={() => copyMessage(pair.detail_content!, `${pair.pair_id}-detail`)}
+                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 flex"
+                        style={{ backgroundColor: copiedId === `${pair.pair_id}-detail` ? "rgba(100,200,100,0.9)" : "rgba(30,40,60,0.9)", border: `1px solid ${SILVER_FAINT}` }}
+                        title="복사"
+                      >
+                        <span style={{ fontSize: "10px", color: copiedId === `${pair.pair_id}-detail` ? "#fff" : SILVER }}>
+                          {copiedId === `${pair.pair_id}-detail` ? "✓" : "⎘"}
+                        </span>
+                      </button>
+                      <div className="px-4 py-3 rounded-2xl text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(192,200,216,0.07)", border: `1px solid rgba(192,200,216,0.25)`, color: "#e0e8f0" }}>
+                        <ReactMarkdown>{fixMarkdown(pair.detail_content)}</ReactMarkdown>
+                      </div>
                     </div>
                   )}
                 </div>
