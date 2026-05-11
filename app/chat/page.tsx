@@ -59,7 +59,9 @@ export default function ChatPage() {
   const [selectedPairIds, setSelectedPairIds] = useState<Set<string>>(new Set());
   const [userProfile, setUserProfile] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showCompleteBtn, setShowCompleteBtn] = useState(false);
   const profileUpdateCountRef = useRef(0);
+  const userScrolledRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -106,15 +108,24 @@ export default function ChatPage() {
   }, [pairs, isLoading]);
 
   useEffect(() => {
-    scrollToBottom();
+    if (!userScrolledRef.current) scrollToBottom();
   }, [pairs, streamingPair]);
 
   useEffect(() => {
-    if (!isLoading) textareaRef.current?.focus();
+    if (!isLoading) {
+      textareaRef.current?.focus();
+      if (userScrolledRef.current) setShowCompleteBtn(true);
+      userScrolledRef.current = false;
+    }
   }, [isLoading]);
 
   function scrollToBottom() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function handleCompleteScroll() {
+    setShowCompleteBtn(false);
+    scrollToBottom();
   }
 
   function handleScroll() {
@@ -122,6 +133,7 @@ export default function ChatPage() {
     if (!el) return;
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     setShowScrollBtn(distFromBottom > 200);
+    if (isLoading && distFromBottom > 100) userScrolledRef.current = true;
   }
 
   function getDetailCache(): Record<string, string> {
@@ -761,11 +773,22 @@ hr{border:1px solid #ccc;margin:1em 0}
         </div>
       </div>
 
-      {/* 맨 아래로 버튼 */}
-      {showScrollBtn && (
+      {/* 답변 완료 바로가기 버튼 */}
+      {showCompleteBtn && (
+        <button
+          onClick={handleCompleteScroll}
+          className="fixed bottom-24 right-6 z-40 flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium shadow-lg"
+          style={{ backgroundColor: SILVER, color: "#0a0e1a", boxShadow: `0 4px 20px rgba(192,200,216,0.4)` }}
+        >
+          답변 완료 ↓
+        </button>
+      )}
+
+      {/* 맨 아래로 버튼 (답변 완료 버튼 없을 때만) */}
+      {showScrollBtn && !showCompleteBtn && (
         <button
           onClick={scrollToBottom}
-          className="fixed bottom-24 right-6 w-10 h-10 rounded-full flex items-center justify-center text-base shadow-lg z-40 transition-opacity"
+          className="fixed bottom-24 right-6 w-10 h-10 rounded-full flex items-center justify-center text-base shadow-lg z-40"
           style={{ backgroundColor: SILVER, color: "#0a0e1a", boxShadow: `0 4px 15px rgba(192,200,216,0.3)` }}
         >
           ↓
