@@ -534,7 +534,7 @@ export default function ChatPage() {
               </div>
 
               {/* AI 답변 */}
-              {pair.assistant.content.length > 3000 ? (
+              {pair.assistant.content.length > 2000 ? (
                 /* 문서 카드 (A4 3장 이상) */
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-2 ml-1">
