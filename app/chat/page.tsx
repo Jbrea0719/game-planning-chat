@@ -61,6 +61,7 @@ export default function ChatPage() {
   const profileUpdateCountRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("jordan_nickname");
@@ -158,9 +159,7 @@ export default function ChatPage() {
     ];
     setStreamingPair({ user: trimmed, assistant: "" });
     setInput("");
-    // textarea 높이 초기화
-    const ta = document.querySelector("textarea");
-    if (ta) { ta.style.height = "auto"; }
+    if (textareaRef.current) { textareaRef.current.style.height = "auto"; textareaRef.current.focus(); }
     setIsLoading(true);
     try {
       const response = await fetch("/api/chat", {
@@ -588,6 +587,7 @@ export default function ChatPage() {
       {/* 입력창 */}
       <div className="px-4 py-3 flex gap-3" style={{ backgroundColor: "rgba(0,0,0,0.5)", borderTop: `1px solid ${SILVER_FAINT}` }}>
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={handleTextareaInput}
           onKeyDown={handleKeyDown}
