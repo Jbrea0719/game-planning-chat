@@ -618,11 +618,15 @@ hr{border:1px solid #ccc;margin:1em 0}
                     </div>
                   )}
                   <button onClick={() => loadDetail(pair.pair_id)} className="text-xs ml-1 flex items-center gap-1 w-fit" style={{ color: SILVER_DIM }}>
-                    {pair.detail_loading ? "⏳ 불러오는 중..." : pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기"}
+                    {pair.detail_loading
+                      ? "⏳ 불러오는 중..."
+                      : pair.detail_content && pair.detail_content.length > 1000
+                        ? (pair.detail_shown ? "▲ 접기" : "▼ 문서로 다운로드")
+                        : (pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기")}
                   </button>
                   {pair.detail_shown && pair.detail_content && (
                     <>
-                      {pair.detail_content.length <= 1000 ? (
+                      {pair.detail_content.length <= 1000 && (
                         <div className="relative">
                           <button
                             onClick={() => copyMessage(pair.detail_content!, `${pair.pair_id}-detail`)}
@@ -637,10 +641,6 @@ hr{border:1px solid #ccc;margin:1em 0}
                           <div className="px-4 py-3 rounded-2xl text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(192,200,216,0.07)", border: `1px solid rgba(192,200,216,0.25)`, color: "#e0e8f0" }}>
                             <ReactMarkdown>{fixMarkdown(pair.detail_content)}</ReactMarkdown>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="px-4 py-3 rounded-2xl text-sm" style={{ backgroundColor: "rgba(192,200,216,0.07)", border: `1px solid rgba(192,200,216,0.25)`, color: SILVER_DIM }}>
-                          내용이 길어 문서로 제공해요.
                         </div>
                       )}
                       <div className="flex items-center gap-2 ml-1 mt-1">
