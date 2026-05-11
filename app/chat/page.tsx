@@ -621,38 +621,40 @@ hr{border:1px solid #ccc;margin:1em 0}
                     {pair.detail_loading ? "⏳ 불러오는 중..." : pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기"}
                   </button>
                   {pair.detail_shown && pair.detail_content && (
-                    <div className="relative">
-                      <button
-                        onClick={() => copyMessage(pair.detail_content!, `${pair.pair_id}-detail`)}
-                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 flex"
-                        style={{ backgroundColor: copiedId === `${pair.pair_id}-detail` ? "rgba(100,200,100,0.9)" : "rgba(30,40,60,0.9)", border: `1px solid ${SILVER_FAINT}` }}
-                        title="복사"
-                      >
-                        <span style={{ fontSize: "10px", color: copiedId === `${pair.pair_id}-detail` ? "#fff" : SILVER }}>
-                          {copiedId === `${pair.pair_id}-detail` ? "✓" : "⎘"}
-                        </span>
-                      </button>
-                      <div className="px-4 py-3 rounded-2xl text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(192,200,216,0.07)", border: `1px solid rgba(192,200,216,0.25)`, color: "#e0e8f0" }}>
-                        <ReactMarkdown>{fixMarkdown(pair.detail_content)}</ReactMarkdown>
+                    <>
+                      <div className="relative">
+                        <button
+                          onClick={() => copyMessage(pair.detail_content!, `${pair.pair_id}-detail`)}
+                          className="absolute -top-2 -right-2 w-6 h-6 rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 flex"
+                          style={{ backgroundColor: copiedId === `${pair.pair_id}-detail` ? "rgba(100,200,100,0.9)" : "rgba(30,40,60,0.9)", border: `1px solid ${SILVER_FAINT}` }}
+                          title="복사"
+                        >
+                          <span style={{ fontSize: "10px", color: copiedId === `${pair.pair_id}-detail` ? "#fff" : SILVER }}>
+                            {copiedId === `${pair.pair_id}-detail` ? "✓" : "⎘"}
+                          </span>
+                        </button>
+                        <div className="px-4 py-3 rounded-2xl text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(192,200,216,0.07)", border: `1px solid rgba(192,200,216,0.25)`, color: "#e0e8f0" }}>
+                          <ReactMarkdown>{fixMarkdown(pair.detail_content)}</ReactMarkdown>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2 ml-1 mt-1">
-                      <span className="text-xs" style={{ color: SILVER_DIM }}>다운로드:</span>
-                      <button
-                        onClick={() => downloadTxt(pair.detail_content!, `조던_자세한답변_${pair.pair_id.slice(0, 8)}`)}
-                        className="text-xs px-2.5 py-1 rounded-lg"
-                        style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
-                      >
-                        TXT
-                      </button>
-                      <button
-                        onClick={() => downloadWord(pair.detail_content!, `조던_자세한답변_${pair.pair_id.slice(0, 8)}`)}
-                        className="text-xs px-2.5 py-1 rounded-lg"
-                        style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
-                      >
-                        Word
-                      </button>
-                    </div>
+                      <div className="flex items-center gap-2 ml-1 mt-1">
+                        <span className="text-xs" style={{ color: SILVER_DIM }}>다운로드:</span>
+                        <button
+                          onClick={() => downloadTxt(pair.detail_content!, `조던_자세한답변_${pair.pair_id.slice(0, 8)}`)}
+                          className="text-xs px-2.5 py-1 rounded-lg"
+                          style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
+                        >
+                          TXT
+                        </button>
+                        <button
+                          onClick={() => downloadWord(pair.detail_content!, `조던_자세한답변_${pair.pair_id.slice(0, 8)}`)}
+                          className="text-xs px-2.5 py-1 rounded-lg"
+                          style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
+                        >
+                          Word
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
