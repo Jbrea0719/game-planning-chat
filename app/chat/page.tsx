@@ -332,6 +332,50 @@ export default function ChatPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  function downloadTxt(content: string, filename: string) {
+    const clean = content
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/\*(.+?)\*/g, "$1")
+      .replace(/^#{1,4}\s+/gm, "")
+      .replace(/^[-*]\s+/gm, "• ");
+    const blob = new Blob([clean], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = filename + ".txt"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadWord(content: string, filename: string) {
+    const html = content
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/^#### (.+)$/gm, "<h4>$1</h4>")
+      .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+      .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+      .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>")
+      .replace(/^[-*]\s+(.+)$/gm, "<li>$1</li>")
+      .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
+      .replace(/^(?!<[hul]).+$/gm, (m) => m.trim() ? `<p>${m}</p>` : "")
+      .replace(/---/g, "<hr>");
+    const doc = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+body{font-family:'맑은 고딕',Arial,sans-serif;font-size:11pt;line-height:1.8;margin:3cm 2.5cm;color:#111}
+h1{font-size:16pt;font-weight:bold;margin:1.2em 0 0.4em}
+h2{font-size:14pt;font-weight:bold;margin:1em 0 0.3em}
+h3{font-size:12pt;font-weight:bold;margin:0.8em 0 0.2em}
+h4{font-size:11pt;font-weight:bold;margin:0.6em 0 0.2em}
+p{margin:0.4em 0}
+ul{padding-left:1.5em;margin:0.4em 0}
+li{margin:0.2em 0}
+strong{font-weight:bold}
+hr{border:1px solid #ccc;margin:1em 0}
+</style></head><body>${html}</body></html>`;
+    const blob = new Blob([doc], { type: "application/msword;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = filename + ".doc"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function copyMessage(text: string, id: string) {
     await navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -534,31 +578,45 @@ export default function ChatPage() {
               </div>
 
               {/* AI 답변 */}
-              {pair.assistant.content.length > 2000 ? (
-                /* 문서 카드 (A4 3장 이상) */
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 ml-1">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}` }}>🎯</div>
-                    <span className="text-xs" style={{ color: SILVER }}>조던</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(192,200,216,0.1)", border: `1px solid ${SILVER_FAINT}`, color: SILVER_DIM }}>📄 문서</span>
-                  </div>
-                  <div className="relative rounded-2xl overflow-hidden" style={{ border: `1px solid rgba(192,200,216,0.3)`, backgroundColor: "rgba(255,255,255,0.03)" }}>
-                    {/* 문서 헤더 */}
-                    <div className="flex items-center justify-between px-4 py-2.5" style={{ backgroundColor: "rgba(192,200,216,0.07)", borderBottom: `1px solid rgba(192,200,216,0.15)` }}>
-                      <span className="text-xs" style={{ color: SILVER_DIM }}>{Math.round(pair.assistant.content.length / 500)}분 분량 · {pair.assistant.content.length.toLocaleString()}자</span>
-                      <button
-                        onClick={() => copyMessage(pair.assistant.content, `${pair.pair_id}-assistant`)}
-                        className="text-xs px-2.5 py-1 rounded-lg flex items-center gap-1"
-                        style={{ backgroundColor: copiedId === `${pair.pair_id}-assistant` ? "rgba(100,200,100,0.2)" : SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: copiedId === `${pair.pair_id}-assistant` ? "#90d090" : SILVER }}
-                      >
-                        {copiedId === `${pair.pair_id}-assistant` ? "✓ 복사됨" : "⎘ 복사"}
-                      </button>
-                    </div>
-                    {/* 문서 본문 */}
-                    <div className="px-5 py-4 text-sm prose prose-sm max-w-none" style={{ color: "#e0e8f0" }}>
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}` }}>🎯</div>
+                <div className="flex flex-col gap-1 max-w-[75%]">
+                  <p className="text-xs ml-1" style={{ color: SILVER }}>조던</p>
+                  <div className="relative">
+                    <button
+                      onClick={() => copyMessage(pair.assistant.content, `${pair.pair_id}-assistant`)}
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 flex"
+                      style={{ backgroundColor: copiedId === `${pair.pair_id}-assistant` ? "rgba(100,200,100,0.9)" : "rgba(30,40,60,0.9)", border: `1px solid ${SILVER_FAINT}` }}
+                      title="복사"
+                    >
+                      <span style={{ fontSize: "10px", color: copiedId === `${pair.pair_id}-assistant` ? "#fff" : SILVER }}>
+                        {copiedId === `${pair.pair_id}-assistant` ? "✓" : "⎘"}
+                      </span>
+                    </button>
+                    <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(255,255,255,0.05)", border: `1px solid ${SILVER_FAINT}`, color: "#e0e8f0", backdropFilter: "blur(10px)" }}>
                       <ReactMarkdown>{fixMarkdown(pair.assistant.content)}</ReactMarkdown>
                     </div>
                   </div>
+                  {/* 2000자 초과 시 다운로드 버튼 */}
+                  {pair.assistant.content.length > 2000 && (
+                    <div className="flex items-center gap-2 ml-1 mt-1">
+                      <span className="text-xs" style={{ color: SILVER_DIM }}>다운로드:</span>
+                      <button
+                        onClick={() => downloadTxt(pair.assistant.content, `조던_${pair.pair_id.slice(0, 8)}`)}
+                        className="text-xs px-2.5 py-1 rounded-lg"
+                        style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
+                      >
+                        TXT
+                      </button>
+                      <button
+                        onClick={() => downloadWord(pair.assistant.content, `조던_${pair.pair_id.slice(0, 8)}`)}
+                        className="text-xs px-2.5 py-1 rounded-lg"
+                        style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
+                      >
+                        Word
+                      </button>
+                    </div>
+                  )}
                   <button onClick={() => loadDetail(pair.pair_id)} className="text-xs ml-1 flex items-center gap-1 w-fit" style={{ color: SILVER_DIM }}>
                     {pair.detail_loading ? "⏳ 불러오는 중..." : pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기"}
                   </button>
@@ -580,50 +638,7 @@ export default function ChatPage() {
                     </div>
                   )}
                 </div>
-              ) : (
-                /* 일반 말풍선 */
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}` }}>🎯</div>
-                  <div className="flex flex-col gap-1 max-w-[75%]">
-                    <p className="text-xs ml-1" style={{ color: SILVER }}>조던</p>
-                    <div className="relative">
-                      <button
-                        onClick={() => copyMessage(pair.assistant.content, `${pair.pair_id}-assistant`)}
-                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 flex"
-                        style={{ backgroundColor: copiedId === `${pair.pair_id}-assistant` ? "rgba(100,200,100,0.9)" : "rgba(30,40,60,0.9)", border: `1px solid ${SILVER_FAINT}` }}
-                        title="복사"
-                      >
-                        <span style={{ fontSize: "10px", color: copiedId === `${pair.pair_id}-assistant` ? "#fff" : SILVER }}>
-                          {copiedId === `${pair.pair_id}-assistant` ? "✓" : "⎘"}
-                        </span>
-                      </button>
-                      <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(255,255,255,0.05)", border: `1px solid ${SILVER_FAINT}`, color: "#e0e8f0", backdropFilter: "blur(10px)" }}>
-                        <ReactMarkdown>{fixMarkdown(pair.assistant.content)}</ReactMarkdown>
-                      </div>
-                    </div>
-                    <button onClick={() => loadDetail(pair.pair_id)} className="text-xs ml-1 flex items-center gap-1 w-fit" style={{ color: SILVER_DIM }}>
-                      {pair.detail_loading ? "⏳ 불러오는 중..." : pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기"}
-                    </button>
-                    {pair.detail_shown && pair.detail_content && (
-                      <div className="relative">
-                        <button
-                          onClick={() => copyMessage(pair.detail_content!, `${pair.pair_id}-detail`)}
-                          className="absolute -top-2 -right-2 w-6 h-6 rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 flex"
-                          style={{ backgroundColor: copiedId === `${pair.pair_id}-detail` ? "rgba(100,200,100,0.9)" : "rgba(30,40,60,0.9)", border: `1px solid ${SILVER_FAINT}` }}
-                          title="복사"
-                        >
-                          <span style={{ fontSize: "10px", color: copiedId === `${pair.pair_id}-detail` ? "#fff" : SILVER }}>
-                            {copiedId === `${pair.pair_id}-detail` ? "✓" : "⎘"}
-                          </span>
-                        </button>
-                        <div className="px-4 py-3 rounded-2xl text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(192,200,216,0.07)", border: `1px solid rgba(192,200,216,0.25)`, color: "#e0e8f0" }}>
-                          <ReactMarkdown>{fixMarkdown(pair.detail_content)}</ReactMarkdown>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
           ))}
 
