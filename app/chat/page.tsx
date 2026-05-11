@@ -158,6 +158,9 @@ export default function ChatPage() {
     ];
     setStreamingPair({ user: trimmed, assistant: "" });
     setInput("");
+    // textarea 높이 초기화
+    const ta = document.querySelector("textarea");
+    if (ta) { ta.style.height = "auto"; }
     setIsLoading(true);
     try {
       const response = await fetch("/api/chat", {
@@ -309,8 +312,15 @@ export default function ChatPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  }
+
+  function handleTextareaInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    setInput(e.target.value);
+    // 높이 자동 조절
+    e.target.style.height = "auto";
+    e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
   }
 
   const activePairs = pairs.filter((p) => !p.is_deleted);
@@ -577,17 +587,18 @@ export default function ChatPage() {
 
       {/* 입력창 */}
       <div className="px-4 py-3 flex gap-3" style={{ backgroundColor: "rgba(0,0,0,0.5)", borderTop: `1px solid ${SILVER_FAINT}` }}>
-        <input
+        <textarea
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={handleTextareaInput}
           onKeyDown={handleKeyDown}
-          placeholder="게임 기획에 대해 질문하세요..."
+          placeholder="게임 기획에 대해 질문하세요... (Shift+Enter 줄바꿈)"
           disabled={isLoading}
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
-          className="flex-1 px-4 py-3 rounded-xl text-sm outline-none"
-          style={{ backgroundColor: "rgba(255,255,255,0.07)", border: `1px solid ${SILVER_FAINT}`, color: "#e0e8f0" }}
+          rows={1}
+          className="flex-1 px-4 py-3 rounded-xl text-sm outline-none resize-none"
+          style={{ backgroundColor: "rgba(255,255,255,0.07)", border: `1px solid ${SILVER_FAINT}`, color: "#e0e8f0", lineHeight: "1.5", overflowY: "auto" }}
         />
         <button
           onClick={sendMessage}
