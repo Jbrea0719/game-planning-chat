@@ -108,6 +108,10 @@ export default function ChatPage() {
     scrollToBottom();
   }, [pairs, streamingPair]);
 
+  useEffect(() => {
+    if (!isLoading) textareaRef.current?.focus();
+  }, [isLoading]);
+
   function scrollToBottom() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }
