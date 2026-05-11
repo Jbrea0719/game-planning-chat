@@ -2,7 +2,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { supabase } from "@/lib/supabase";
 
 // 조던 — 영웅수집형 게임 기획 전문가 시스템 프롬프트 (detailed 여부에 따라 길이 지침 달라짐)
-function buildSystemPrompt(detailed?: boolean): string {
+function buildSystemPrompt(detailed?: boolean, userProfile?: string): string {
+  const profileSection = userProfile
+    ? `\n\n## 이 사용자에 대해 알고 있는 것\n\n${userProfile}\n\n이 정보를 바탕으로 사용자의 맥락과 방향성에 맞게 대화하세요.`
+    : "";
+
   const lengthGuide = detailed
     ? `- 앞선 답변을 전문가 관점에서 체계적으로 풀어서 설명해요.
 - 구체적인 수치, 사례, 설계 논리를 단계별로 정리해요.
@@ -66,18 +70,19 @@ AFK Arena / AFK2 (릴리스 게임즈), 서머너즈워, 니케, 세븐나이츠
 
 ## 답변 길이
 
-${lengthGuide}`;
+${lengthGuide}${profileSection}`;
 }
 
 type Message = { role: "user" | "assistant"; content: string };
 
 export async function POST(request: Request) {
   try {
-    const { messages, session_id, pair_id, detailed } = (await request.json()) as {
+    const { messages, session_id, pair_id, detailed, user_profile } = (await request.json()) as {
       messages: Message[];
       session_id?: string;
       pair_id?: string;
       detailed?: boolean;
+      user_profile?: string;
     };
 
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -85,7 +90,7 @@ export async function POST(request: Request) {
     const stream = await client.messages.stream({
       model: "claude-sonnet-4-5",
       max_tokens: detailed ? 8192 : 800,
-      system: buildSystemPrompt(detailed),
+      system: buildSystemPrompt(detailed, user_profile),
       messages,
     });
 

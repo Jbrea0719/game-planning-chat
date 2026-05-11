@@ -57,6 +57,8 @@ export default function ChatPage() {
   const [copied, setCopied] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedPairIds, setSelectedPairIds] = useState<Set<string>>(new Set());
+  const [userProfile, setUserProfile] = useState("");
+  const profileUpdateCountRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -74,7 +76,32 @@ export default function ChatPage() {
         if (data.messages?.length > 0) setPairs(groupIntoPairs(data.messages));
       })
       .catch(() => {});
+    fetch(`/api/profile?session_id=${encodeURIComponent(sessionId)}`)
+      .then((r) => r.json())
+      .then((data) => { if (data.profile) setUserProfile(data.profile); })
+      .catch(() => {});
   }, [sessionId]);
+
+  // 5번 대화마다 프로필 자동 업데이트
+  useEffect(() => {
+    const activePairs = pairs.filter((p) => !p.is_deleted);
+    const count = activePairs.length;
+    if (count > 0 && count % 5 === 0 && count !== profileUpdateCountRef.current && sessionId && !isLoading) {
+      profileUpdateCountRef.current = count;
+      const msgs = activePairs.flatMap((p) => [
+        { role: p.user.role, content: p.user.content },
+        { role: p.assistant.role, content: p.assistant.content },
+      ]);
+      fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, messages: msgs, existing_profile: userProfile }),
+      })
+        .then((r) => r.json())
+        .then((data) => { if (data.profile) setUserProfile(data.profile); })
+        .catch(() => {});
+    }
+  }, [pairs, isLoading]);
 
   useEffect(() => {
     scrollToBottom();
@@ -136,7 +163,7 @@ export default function ChatPage() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: allMessages, session_id: sessionId, pair_id: pairId }),
+        body: JSON.stringify({ messages: allMessages, session_id: sessionId, pair_id: pairId, user_profile: userProfile }),
       });
       if (!response.ok || !response.body) throw new Error("오류");
       const reader = response.body.getReader();
