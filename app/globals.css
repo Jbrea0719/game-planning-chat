@@ -1,8 +1,9 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0e1a;
+  --foreground: #e0e8f0;
 }
 
 @theme inline {
@@ -12,15 +13,25 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* 채팅 답변 마크다운 줄간격 조정 */
+.prose p { margin-top: 0.3rem; margin-bottom: 0.3rem; }
+.prose h1, .prose h2, .prose h3 { margin-top: 0.6rem; margin-bottom: 0; }
+.prose h1 + *, .prose h2 + *, .prose h3 + * { margin-top: 0 !important; }
+.prose ul, .prose ol { margin-top: 0.3rem; margin-bottom: 0.3rem; }
+.prose li { margin-top: 0.1rem; margin-bottom: 0.1rem; }
+.prose blockquote { margin-top: 0.3rem; margin-bottom: 0.3rem; }
+
+/* 다크 테마 — 실버 강조 */
+.prose h1, .prose h2, .prose h3, .prose h4 { color: #e0e8f0 !important; }
+.prose p, .prose li, .prose td, .prose th { color: #e0e8f0 !important; }
+.prose strong, .prose p strong, .prose li strong { color: #c0c8d8 !important; font-weight: 700 !important; font-style: normal !important; letter-spacing: normal !important; }
+.prose em { color: #b8c4d4 !important; }
+.prose code { color: #c0c8d8 !important; background: rgba(192,200,216,0.1) !important; }
+.prose blockquote { color: #a8b4c8 !important; border-left-color: rgba(192,200,216,0.4) !important; }
+.prose a { color: #c0c8d8 !important; }
