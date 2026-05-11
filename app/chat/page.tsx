@@ -58,6 +58,7 @@ export default function ChatPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedPairIds, setSelectedPairIds] = useState<Set<string>>(new Set());
   const [userProfile, setUserProfile] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const profileUpdateCountRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -315,6 +316,12 @@ export default function ChatPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  async function copyMessage(text: string, id: string) {
+    await navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
@@ -493,8 +500,20 @@ export default function ChatPage() {
                   <button onClick={() => deletePair(pair.pair_id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-xs" style={{ color: SILVER_DIM }}>삭제</button>
                   {pair.timestamp && <span className="text-xs" style={{ color: SILVER_DIM }}>{pair.timestamp}</span>}
                 </div>
-                <div className="max-w-[70%] px-4 py-3 rounded-2xl rounded-tr-sm text-sm font-medium" style={{ backgroundColor: SILVER, color: "#0a0e1a", boxShadow: `0 4px 15px rgba(192,200,216,0.2)` }}>
-                  {pair.user.content}
+                <div className="relative max-w-[70%]">
+                  <button
+                    onClick={() => copyMessage(pair.user.content, `${pair.pair_id}-user`)}
+                    className="absolute -top-2 -right-2 w-6 h-6 rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 flex"
+                    style={{ backgroundColor: copiedId === `${pair.pair_id}-user` ? "rgba(100,200,100,0.9)" : "rgba(30,40,60,0.9)", border: `1px solid ${SILVER_FAINT}` }}
+                    title="복사"
+                  >
+                    <span style={{ fontSize: "10px", color: copiedId === `${pair.pair_id}-user` ? "#fff" : SILVER }}>
+                      {copiedId === `${pair.pair_id}-user` ? "✓" : "⎘"}
+                    </span>
+                  </button>
+                  <div className="px-4 py-3 rounded-2xl rounded-tr-sm text-sm font-medium whitespace-pre-wrap" style={{ backgroundColor: SILVER, color: "#0a0e1a", boxShadow: `0 4px 15px rgba(192,200,216,0.2)` }}>
+                    {pair.user.content}
+                  </div>
                 </div>
               </div>
 
@@ -503,8 +522,20 @@ export default function ChatPage() {
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}` }}>🎯</div>
                 <div className="flex flex-col gap-1 max-w-[75%]">
                   <p className="text-xs ml-1" style={{ color: SILVER }}>조던</p>
-                  <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(255,255,255,0.05)", border: `1px solid ${SILVER_FAINT}`, color: "#e0e8f0", backdropFilter: "blur(10px)" }}>
-                    <ReactMarkdown>{fixMarkdown(pair.assistant.content)}</ReactMarkdown>
+                  <div className="relative">
+                    <button
+                      onClick={() => copyMessage(pair.assistant.content, `${pair.pair_id}-assistant`)}
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 flex"
+                      style={{ backgroundColor: copiedId === `${pair.pair_id}-assistant` ? "rgba(100,200,100,0.9)" : "rgba(30,40,60,0.9)", border: `1px solid ${SILVER_FAINT}` }}
+                      title="복사"
+                    >
+                      <span style={{ fontSize: "10px", color: copiedId === `${pair.pair_id}-assistant` ? "#fff" : SILVER }}>
+                        {copiedId === `${pair.pair_id}-assistant` ? "✓" : "⎘"}
+                      </span>
+                    </button>
+                    <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(255,255,255,0.05)", border: `1px solid ${SILVER_FAINT}`, color: "#e0e8f0", backdropFilter: "blur(10px)" }}>
+                      <ReactMarkdown>{fixMarkdown(pair.assistant.content)}</ReactMarkdown>
+                    </div>
                   </div>
                   <button onClick={() => loadDetail(pair.pair_id)} className="text-xs ml-1 flex items-center gap-1 w-fit" style={{ color: SILVER_DIM }}>
                     {pair.detail_loading ? "⏳ 불러오는 중..." : pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기"}
