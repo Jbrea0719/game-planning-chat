@@ -107,14 +107,10 @@ export async function POST(request: Request) {
 
         // 스트리밍 완료 후 Supabase에 pair_id와 함께 저장
         if (session_id && pair_id) {
-          const { error: insertError } = await supabase.from("messages").insert([
+          await supabase.from("messages").insert([
             { session_id, pair_id, role: "user", content: userMessage.content, universes: "전체", is_deleted: false },
             { session_id, pair_id, role: "assistant", content: assistantText, universes: "전체", is_deleted: false },
           ]);
-          if (insertError) console.error("[api/chat] Supabase 저장 오류:", insertError);
-          else console.log("[api/chat] 저장 완료:", { session_id, pair_id });
-        } else {
-          console.warn("[api/chat] session_id 또는 pair_id 없음 — 저장 건너뜀", { session_id, pair_id });
         }
       },
     });
