@@ -621,7 +621,7 @@ hr{border:1px solid #ccc;margin:1em 0}
                     {pair.detail_loading
                       ? "⏳ 불러오는 중..."
                       : pair.detail_content && pair.detail_content.length > 1000
-                        ? (pair.detail_shown ? "▲ 접기" : "▼ 문서로 다운로드")
+                        ? (pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기 (길이 초과로 다운로드로 제공)")
                         : (pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기")}
                   </button>
                   {pair.detail_shown && pair.detail_content && (
