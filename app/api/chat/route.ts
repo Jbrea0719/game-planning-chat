@@ -10,11 +10,14 @@ function buildSystemPrompt(detailed?: boolean, userProfile?: string): string {
   const lengthGuide = detailed
     ? `이 답변은 "자세한 답변 보기"로 요청된 보충 설명이에요.
 
-- 앞선 짧은 답변을 보충하는 수준으로 작성해요.
-- 글자 수 제한 없이 내용이 필요한 만큼 충분히 설명해요.
-- **반드시 설명을 완전히 마무리하세요.** 문장이나 항목이 중간에 끊기면 안 돼요.
-- 내용이 자연스럽게 마무리되는 지점에서 끝내요. 억지로 늘리지 마세요.
-- 불필요한 반복은 생략하고 논리적으로 구성해요.`
+- 반드시 3000자 이내의 완결된 답변을 작성해요. 3000자를 절대 초과하지 마세요.
+- 답변은 반드시 완결된 문장으로 끝나야 해요. 절대로 단어나 문장 중간에서 잘리면 안 돼요.
+- 헤더(#), 목록(-, •), 표 등 구조가 도움된다면 자유롭게 사용해요.
+- 만약 3000자로는 전달해야 할 내용의 50% 미만밖에 커버하지 못한다고 판단되면:
+  1) 3000자 이내의 핵심 요약을 먼저 완결성 있게 작성하고 (반드시 완결된 문장으로 끝낼 것)
+  2) 바로 다음 줄에 __NEEDS_FULL__ 을 단독으로 작성하고
+  3) 그 아래에 전체 답변을 이어서 작성해요 (10000자 이내, 반드시 완결된 문장으로 끝낼 것)
+- 50% 이상 커버 가능하면 __NEEDS_FULL__ 없이 3000자 이내로만 작성해요.`
     : `이 답변은 채팅 첫 답변이에요.
 
 **절대 규칙 (반드시 지켜야 함)**
@@ -23,6 +26,7 @@ function buildSystemPrompt(detailed?: boolean, userProfile?: string): string {
 - 내용이 많아서 목록이나 헤더가 필요하다고 느껴지면, 그건 자세한 답변에서 다룰 내용이에요. 여기서는 핵심 한 가지만 문장으로 짚고 "자세한 답변 보기에서 이어서 설명할게요"로 마무리해요.
 
 **길이 기준**
+- 반드시 500자 이내로 작성해요. 500자를 절대 초과하지 마세요. 어떤 질문에도 예외 없어요.
 - 짧게 설명 가능: 1~3문장으로 끝내요.
 - 짧게 설명 불가능: 가장 중요한 핵심 하나만 2~3문장으로 짚고 마무리해요. 나머지는 자세한 답변으로 넘겨요.`;
 
@@ -100,7 +104,7 @@ export async function POST(request: Request) {
 
     const stream = await client.messages.stream({
       model: "claude-sonnet-4-5",
-      max_tokens: detailed ? 8192 : 800,
+      max_tokens: detailed ? 3000 : 500,
       system: buildSystemPrompt(detailed, user_profile),
       messages,
     });
@@ -118,16 +122,20 @@ export async function POST(request: Request) {
             assistantText += chunk.delta.text;
             controller.enqueue(new TextEncoder().encode(chunk.delta.text));
           }
+          // 토큰 한도 초과 감지
+          if (chunk.type === "message_delta" && chunk.delta.stop_reason === "max_tokens") {
+            controller.enqueue(new TextEncoder().encode("__TRUNCATED__"));
+          }
         }
-        controller.close();
 
-        // 스트리밍 완료 후 Supabase에 pair_id와 함께 저장
+        // Supabase 저장 후 스트림 종료 (저장 전 종료 시 데이터 유실 방지)
         if (session_id && pair_id) {
           await supabase.from("messages").insert([
             { session_id, pair_id, role: "user", content: userMessage.content, universes: "전체", is_deleted: false },
             { session_id, pair_id, role: "assistant", content: assistantText, universes: "전체", is_deleted: false },
           ]);
         }
+        controller.close();
       },
     });
 

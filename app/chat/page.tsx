@@ -41,6 +41,15 @@ function fixMarkdown(text: string): string {
     .replace(/\*\*'([^']+)'\*\*/g, "**$1**");
 }
 
+// 토큰 한도 초과로 잘린 경우 불완전한 마지막 줄 제거
+function cleanTruncated(text: string): string {
+  let clean = text.replace("__TRUNCATED__", "").trimEnd();
+  if (/([요다죠네해)]|[!?.。！？])\s*$/.test(clean)) return clean;
+  const lastNL = clean.lastIndexOf("\n");
+  if (lastNL > 0) return clean.slice(0, lastNL).trimEnd();
+  return clean;
+}
+
 export default function ChatPage() {
   const [pairs, setPairs] = useState<MessagePair[]>([]);
   const [streamingPair, setStreamingPair] = useState<{ user: string; assistant: string } | null>(null);
@@ -61,7 +70,9 @@ export default function ChatPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showCompleteBtn, setShowCompleteBtn] = useState(false);
   const profileUpdateCountRef = useRef(0);
-  const userScrolledRef = useRef(false);
+  const userScrolledUpRef = useRef(false);    // 스트리밍 중 사용자가 위로 스크롤했는지
+  const isSubLoadingRef = useRef(false);      // loadDetail 진행 중 여부
+  const abortControllerRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -107,20 +118,23 @@ export default function ChatPage() {
     }
   }, [pairs, isLoading]);
 
+  // 스트리밍 중 + 사용자가 스크롤 올리지 않았을 때만 자동 하단 이동
   useEffect(() => {
-    if (!userScrolledRef.current) scrollToBottom();
-  }, [pairs, streamingPair]);
+    if (streamingPair !== null && !userScrolledUpRef.current) {
+      scrollToBottom();
+    }
+  }, [streamingPair]);
 
   useEffect(() => {
     if (!isLoading) {
       textareaRef.current?.focus();
-      if (userScrolledRef.current) setShowCompleteBtn(true);
-      userScrolledRef.current = false;
     }
   }, [isLoading]);
 
   function scrollToBottom() {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // smooth 대신 instant (스트리밍 중 부드러운 스크롤이 겹치면 어색함)
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }
 
   function handleCompleteScroll() {
@@ -133,7 +147,15 @@ export default function ChatPage() {
     if (!el) return;
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     setShowScrollBtn(distFromBottom > 200);
-    if (isLoading && distFromBottom > 100) userScrolledRef.current = true;
+    // 기본 답변 or 자세한 답변 스트리밍 중 사용자 스크롤 감지
+    if (isLoading || isSubLoadingRef.current) {
+      if (distFromBottom > 200) {
+        userScrolledUpRef.current = true;
+      } else if (distFromBottom < 50) {
+        // 50px 이내로 내려오면 다시 자동 스크롤 재개
+        userScrolledUpRef.current = false;
+      }
+    }
   }
 
   function getDetailCache(): Record<string, string> {
@@ -193,11 +215,17 @@ export default function ChatPage() {
     setInput("");
     if (textareaRef.current) { textareaRef.current.style.height = "auto"; textareaRef.current.focus(); }
     setIsLoading(true);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    userScrolledUpRef.current = false; // 새 질문 시작 시 초기화
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: allMessages, session_id: sessionId, pair_id: pairId, user_profile: userProfile }),
+        signal: controller.signal,
       });
       if (!response.ok || !response.body) throw new Error("오류");
       const reader = response.body.getReader();
@@ -207,8 +235,17 @@ export default function ChatPage() {
         const { done, value } = await reader.read();
         if (done) break;
         assistantText += decoder.decode(value);
-        setStreamingPair({ user: trimmed, assistant: assistantText });
+        // 화면에는 __TRUNCATED__ 마커 제외하고 표시
+        setStreamingPair({ user: trimmed, assistant: assistantText.replace("__TRUNCATED__", "") });
       }
+
+      // 토큰 한도 초과 처리
+      if (assistantText.includes("__TRUNCATED__")) {
+        assistantText = cleanTruncated(assistantText);
+      }
+
+      const hadScrolledUp = userScrolledUpRef.current;
+      userScrolledUpRef.current = false;
       setPairs((prev) => [...prev, {
         pair_id: pairId,
         user: { role: "user", content: trimmed, pair_id: pairId },
@@ -217,11 +254,37 @@ export default function ChatPage() {
         timestamp: time,
       }]);
       setStreamingPair(null);
+      if (hadScrolledUp) {
+        setShowCompleteBtn(true);
+      } else {
+        scrollToBottom();
+      }
     } catch {
+      // AbortError면 조용히 처리
       setStreamingPair(null);
     } finally {
+      abortControllerRef.current = null;
       setIsLoading(false);
     }
+  }
+
+  // 질문 실수: 스트리밍 중단 + 질문·답변 모두 버림
+  function cancelAndDiscard() {
+    abortControllerRef.current?.abort();
+    setStreamingPair(null);
+    setInput("");
+    userScrolledUpRef.current = false;
+    setShowCompleteBtn(false);
+  }
+
+  // 질문 수정: 스트리밍 중단 + 질문을 입력창에 복원
+  function cancelAndEdit() {
+    const question = streamingPair?.user ?? "";
+    abortControllerRef.current?.abort();
+    setStreamingPair(null);
+    setInput(question);
+    userScrolledUpRef.current = false;
+    setShowCompleteBtn(false);
   }
 
   async function loadDetail(pairId: string) {
@@ -231,13 +294,12 @@ export default function ChatPage() {
       setPairs((prev) => prev.map((p) => p.pair_id === pairId ? { ...p, detail_shown: !p.detail_shown } : p));
       return;
     }
+    isSubLoadingRef.current = true;
+    userScrolledUpRef.current = false;
     setPairs((prev) => prev.map((p) => p.pair_id === pairId ? { ...p, detail_loading: true, detail_shown: true } : p));
     try {
+      // 이전 대화 기록 제외 — 현재 Q&A만 전달해서 입력 토큰 절약 (출력 공간 확보)
       const context = [
-        ...pairs.filter(p => !p.is_deleted && p.pair_id !== pairId).flatMap(p => [
-          { role: p.user.role, content: p.user.content },
-          { role: p.assistant.role, content: p.assistant.content },
-        ]),
         { role: "user" as const, content: pair.user.content },
         { role: "assistant" as const, content: pair.assistant.content },
         { role: "user" as const, content: "위 답변을 더 자세하고 풍부하게 설명해줘." },
@@ -255,12 +317,23 @@ export default function ChatPage() {
         const { done, value } = await reader.read();
         if (done) break;
         text += decoder.decode(value);
-        setPairs((prev) => prev.map((p) => p.pair_id === pairId ? { ...p, detail_content: text } : p));
+        setPairs((prev) => prev.map((p) => p.pair_id === pairId ? { ...p, detail_content: text.replace("__TRUNCATED__", "") } : p));
+        if (!userScrolledUpRef.current) scrollToBottom();
       }
-      saveDetailCache(pairId, text);
+      const hadScrolledUp = userScrolledUpRef.current;
+      const finalDetailText = text.includes("__TRUNCATED__") ? cleanTruncated(text) : text;
+      setPairs((prev) => prev.map((p) => p.pair_id === pairId ? { ...p, detail_content: finalDetailText } : p));
+      saveDetailCache(pairId, finalDetailText);
+      if (hadScrolledUp) {
+        setShowCompleteBtn(true);
+      } else {
+        scrollToBottom();
+      }
     } catch {
       setPairs((prev) => prev.map((p) => p.pair_id === pairId ? { ...p, detail_content: "오류가 발생했습니다." } : p));
     } finally {
+      isSubLoadingRef.current = false;
+      userScrolledUpRef.current = false;
       setPairs((prev) => prev.map((p) => p.pair_id === pairId ? { ...p, detail_loading: false } : p));
     }
   }
@@ -278,6 +351,17 @@ export default function ChatPage() {
   async function permanentDeletePair(pairId: string) {
     setPairs((prev) => prev.filter((p) => p.pair_id !== pairId));
     await fetch("/api/messages", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pair_id: pairId }) });
+  }
+
+  // 삭제된 대화 일괄 영구 삭제
+  async function bulkPermanentDelete() {
+    const deletedList = pairs.filter((p) => p.is_deleted);
+    if (!confirm(`삭제된 대화 ${deletedList.length}개를 모두 영구 삭제할까요?`)) return;
+    const ids = deletedList.map((p) => p.pair_id);
+    setPairs((prev) => prev.filter((p) => !p.is_deleted));
+    await Promise.all(ids.map((id) =>
+      fetch("/api/messages", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pair_id: id }) })
+    ));
   }
 
   function enterSelectMode() {
@@ -390,37 +474,12 @@ export default function ChatPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function downloadWord(content: string) {
+  async function downloadMd(content: string) {
     const title = await getTitle(content);
     const filename = getUniqueFilename(`${title}_${getDateStr()}`);
-    const html = content
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/^#### (.+)$/gm, "<h4>$1</h4>")
-      .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-      .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-      .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*(.+?)\*/g, "<em>$1</em>")
-      .replace(/^[-*]\s+(.+)$/gm, "<li>$1</li>")
-      .replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
-      .replace(/^(?!<[hul]).+$/gm, (m) => m.trim() ? `<p>${m}</p>` : "")
-      .replace(/---/g, "<hr>");
-    const doc = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<style>
-body{font-family:'맑은 고딕',Arial,sans-serif;font-size:11pt;line-height:1.8;margin:3cm 2.5cm;color:#111}
-h1{font-size:16pt;font-weight:bold;margin:1.2em 0 0.4em}
-h2{font-size:14pt;font-weight:bold;margin:1em 0 0.3em}
-h3{font-size:12pt;font-weight:bold;margin:0.8em 0 0.2em}
-h4{font-size:11pt;font-weight:bold;margin:0.6em 0 0.2em}
-p{margin:0.4em 0}
-ul{padding-left:1.5em;margin:0.4em 0}
-li{margin:0.2em 0}
-strong{font-weight:bold}
-hr{border:1px solid #ccc;margin:1em 0}
-</style></head><body>${html}</body></html>`;
-    const blob = new Blob([doc], { type: "application/msword;charset=utf-8" });
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = filename + ".doc"; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = filename + ".md"; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -431,7 +490,15 @@ hr{border:1px solid #ccc;margin:1em 0}
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    if (e.key === "Enter" && e.altKey) {
+      // Alt+Enter → 줄바꿈
+      e.preventDefault();
+      setInput((prev) => prev + "\n");
+    } else if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
+      // Enter → 전송
+      e.preventDefault();
+      sendMessage();
+    }
   }
 
   function handleTextareaInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -654,30 +721,34 @@ hr{border:1px solid #ccc;margin:1em 0}
                         className="text-xs px-2.5 py-1 rounded-lg"
                         style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
                       >
-                        TXT
+                        📄 TXT
                       </button>
                       <button
-                        onClick={() => downloadWord(pair.assistant.content)}
+                        onClick={() => downloadMd(pair.assistant.content)}
                         className="text-xs px-2.5 py-1 rounded-lg"
                         style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
                       >
-                        Word
+                        📝 MD
                       </button>
                     </div>
                   )}
                   <button onClick={() => loadDetail(pair.pair_id)} className="text-xs ml-1 flex items-center gap-1 w-fit" style={{ color: SILVER_DIM }}>
                     {pair.detail_loading
                       ? "⏳ 불러오는 중..."
-                      : pair.detail_content && pair.detail_content.length > 1000
-                        ? (pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기 (길이 초과로 다운로드로 제공)")
+                      : pair.detail_content?.includes("__NEEDS_FULL__")
+                        ? (pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기 (전체는 다운로드)")
                         : (pair.detail_shown ? "▲ 접기" : "▼ 자세한 답변 보기")}
                   </button>
-                  {pair.detail_shown && pair.detail_content && (
-                    <>
-                      {pair.detail_content.length <= 1000 && (
+                  {pair.detail_shown && pair.detail_content && (() => {
+                    const MARKER = "__NEEDS_FULL__";
+                    const markerIdx = pair.detail_content!.indexOf(MARKER);
+                    const bubbleText = markerIdx !== -1 ? pair.detail_content!.slice(0, markerIdx).trim() : pair.detail_content!.trim();
+                    const fullText   = markerIdx !== -1 ? pair.detail_content!.slice(markerIdx + MARKER.length).trim() : null;
+                    return (
+                      <div className="flex flex-col gap-2">
                         <div className="relative">
                           <button
-                            onClick={() => copyMessage(pair.detail_content!, `${pair.pair_id}-detail`)}
+                            onClick={() => copyMessage(bubbleText, `${pair.pair_id}-detail`)}
                             className="absolute -top-2 -right-2 w-6 h-6 rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 flex"
                             style={{ backgroundColor: copiedId === `${pair.pair_id}-detail` ? "rgba(100,200,100,0.9)" : "rgba(30,40,60,0.9)", border: `1px solid ${SILVER_FAINT}` }}
                             title="복사"
@@ -687,29 +758,28 @@ hr{border:1px solid #ccc;margin:1em 0}
                             </span>
                           </button>
                           <div className="px-4 py-3 rounded-2xl text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(192,200,216,0.07)", border: `1px solid rgba(192,200,216,0.25)`, color: "#e0e8f0" }}>
-                            <ReactMarkdown>{fixMarkdown(pair.detail_content)}</ReactMarkdown>
+                            <ReactMarkdown>{fixMarkdown(bubbleText)}</ReactMarkdown>
                           </div>
                         </div>
-                      )}
-                      <div className="flex items-center gap-2 ml-1 mt-1">
-                        <span className="text-xs" style={{ color: SILVER_DIM }}>다운로드:</span>
-                        <button
-                          onClick={() => downloadTxt(pair.detail_content!)}
-                          className="text-xs px-2.5 py-1 rounded-lg"
-                          style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
-                        >
-                          TXT
-                        </button>
-                        <button
-                          onClick={() => downloadWord(pair.detail_content!)}
-                          className="text-xs px-2.5 py-1 rounded-lg"
-                          style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}
-                        >
-                          Word
-                        </button>
+                        {fullText && !pair.detail_loading && (
+                          <div className="flex flex-col gap-1 ml-1">
+                            <p className="text-xs" style={{ color: SILVER_DIM }}>📎 전체 내용이 길어 요약본을 표시했어요. 전체 답변은 다운로드로 확인하세요.</p>
+                            <div className="flex gap-2">
+                              <button onClick={() => downloadTxt(fullText)} className="text-xs px-3 py-1.5 rounded-lg font-medium" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}`, color: SILVER }}>📄 TXT 전체 다운로드</button>
+                              <button onClick={() => downloadMd(fullText)} className="text-xs px-3 py-1.5 rounded-lg font-medium" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}`, color: SILVER }}>📝 MD 전체 다운로드</button>
+                            </div>
+                          </div>
+                        )}
+                        {!fullText && !pair.detail_loading && (
+                          <div className="flex items-center gap-2 ml-1 mt-1">
+                            <span className="text-xs" style={{ color: SILVER_DIM }}>다운로드:</span>
+                            <button onClick={() => downloadTxt(bubbleText)} className="text-xs px-2.5 py-1 rounded-lg" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}>📄 TXT</button>
+                            <button onClick={() => downloadMd(bubbleText)} className="text-xs px-2.5 py-1 rounded-lg" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_FAINT}`, color: SILVER }}>📝 MD</button>
+                          </div>
+                        )}
                       </div>
-                    </>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -718,7 +788,23 @@ hr{border:1px solid #ccc;margin:1em 0}
           {/* 스트리밍 중 */}
           {streamingPair && (
             <div className="space-y-3">
-              <div className="flex justify-end">
+              <div className="flex justify-end items-end gap-2">
+                <div className="flex flex-col gap-1 items-end">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={cancelAndEdit}
+                      className="text-xs px-3 py-1 rounded-full font-medium transition-opacity hover:opacity-80"
+                      style={{ backgroundColor: "rgba(192,200,216,0.15)", border: `1px solid ${SILVER_DIM}`, color: SILVER }}>
+                      ✏️ 질문 수정
+                    </button>
+                    <button
+                      onClick={cancelAndDiscard}
+                      className="text-xs px-3 py-1 rounded-full font-medium transition-opacity hover:opacity-80"
+                      style={{ backgroundColor: "rgba(255,80,80,0.12)", border: "1px solid rgba(255,80,80,0.35)", color: "#f87171" }}>
+                      🗑️ 질문 실수
+                    </button>
+                  </div>
+                </div>
                 <div className="max-w-[70%] px-4 py-3 rounded-2xl rounded-tr-sm text-sm font-medium" style={{ backgroundColor: SILVER, color: "#0a0e1a" }}>
                   {streamingPair.user}
                 </div>
@@ -740,9 +826,14 @@ hr{border:1px solid #ccc;margin:1em 0}
           {/* 삭제된 대화 */}
           {deletedPairs.length > 0 && (
             <div className="pt-2">
-              <button onClick={() => setShowDeleted(!showDeleted)} className="text-xs mx-auto flex items-center gap-1 px-3 py-1 rounded-full" style={{ color: SILVER_DIM, backgroundColor: "rgba(192,200,216,0.07)", border: `1px solid ${SILVER_FAINT}` }}>
-                {showDeleted ? "▲" : "▼"} 삭제된 대화 {deletedPairs.length}개
-              </button>
+              <div className="flex items-center justify-center gap-2">
+                <button onClick={() => setShowDeleted(!showDeleted)} className="text-xs flex items-center gap-1 px-3 py-1 rounded-full" style={{ color: SILVER_DIM, backgroundColor: "rgba(192,200,216,0.07)", border: `1px solid ${SILVER_FAINT}` }}>
+                  {showDeleted ? "▲" : "▼"} 삭제된 대화 {deletedPairs.length}개
+                </button>
+                <button onClick={bulkPermanentDelete} className="text-xs flex items-center gap-1 px-3 py-1 rounded-full" style={{ color: "#f87171", backgroundColor: "rgba(255,50,50,0.07)", border: "1px solid rgba(255,50,50,0.2)" }}>
+                  🗑️ 일괄 삭제
+                </button>
+              </div>
               {showDeleted && (
                 <div className="space-y-4 mt-3">
                   {deletedPairs.map((pair) => (
@@ -802,7 +893,7 @@ hr{border:1px solid #ccc;margin:1em 0}
           value={input}
           onChange={handleTextareaInput}
           onKeyDown={handleKeyDown}
-          placeholder="게임 기획에 대해 질문하세요... (Shift+Enter 줄바꿈)"
+          placeholder="게임 기획에 대해 질문하세요... (Enter 전송 / Alt+Enter 줄바꿈)"
           disabled={isLoading}
           autoComplete="off"
           autoCorrect="off"
