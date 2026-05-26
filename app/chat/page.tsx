@@ -519,8 +519,8 @@ export default function ChatPage() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="rounded-2xl p-8 w-80 shadow-2xl" style={{ backgroundColor: "#0f1628", border: `1px solid ${SILVER_FAINT}` }}>
             <div className="flex items-center gap-2 mb-1">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}` }}>
-                🎯
+              <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ border: `1px solid ${SILVER_DIM}` }}>
+                <img src="/avatar.jpg" alt="조던" className="w-full h-full object-cover" />
               </div>
               <h2 className="text-base font-bold" style={{ color: SILVER }}>입장하기</h2>
             </div>
@@ -596,8 +596,8 @@ export default function ChatPage() {
 
       {/* 헤더 */}
       <header className="px-6 py-4 flex items-center gap-4" style={{ backgroundColor: "rgba(0,0,0,0.4)", borderBottom: `1px solid ${SILVER_FAINT}` }}>
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}`, boxShadow: `0 0 15px rgba(192,200,216,0.2)` }}>
-          🎯
+        <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0" style={{ border: `1px solid ${SILVER_DIM}`, boxShadow: `0 0 15px rgba(192,200,216,0.2)` }}>
+          <img src="/avatar.jpg" alt="조던" className="w-full h-full object-cover" />
         </div>
         <div>
           <p className="font-bold text-sm" style={{ color: SILVER }}>조던</p>
@@ -647,7 +647,7 @@ export default function ChatPage() {
 
           {activePairs.length === 0 && !streamingPair && (
             <div className="text-center mt-20">
-              <div className="w-16 h-16 rounded-full mx-auto flex items-center justify-center text-4xl mb-4" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}` }}>🎯</div>
+              <div className="w-16 h-16 rounded-full mx-auto overflow-hidden mb-4" style={{ border: `1px solid ${SILVER_DIM}` }}><img src="/avatar.jpg" alt="조던" className="w-full h-full object-cover" /></div>
               <p className="text-sm font-medium" style={{ color: SILVER }}>조던</p>
               <p className="text-xs mt-1" style={{ color: SILVER_DIM }}>영웅수집형 게임 기획 — 가챠 · 밸런스 · BM · 컨텐츠 무엇이든 물어보세요</p>
             </div>
@@ -694,7 +694,7 @@ export default function ChatPage() {
 
               {/* AI 답변 */}
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}` }}>🎯</div>
+                <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ border: `1px solid ${SILVER_DIM}` }}><img src="/avatar.jpg" alt="조던" className="w-full h-full object-cover" /></div>
                 <div className="flex flex-col gap-1 max-w-[75%]">
                   <p className="text-xs ml-1" style={{ color: SILVER }}>조던</p>
                   <div className="relative">
@@ -810,7 +810,7 @@ export default function ChatPage() {
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}` }}>🎯</div>
+                <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ border: `1px solid ${SILVER_DIM}` }}><img src="/avatar.jpg" alt="조던" className="w-full h-full object-cover" /></div>
                 <div className="flex flex-col gap-1 max-w-[75%]">
                   <p className="text-xs ml-1" style={{ color: SILVER }}>조던</p>
                   <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm prose prose-sm max-w-none" style={{ backgroundColor: "rgba(255,255,255,0.05)", border: `1px solid ${SILVER_FAINT}`, color: "#e0e8f0" }}>
@@ -848,7 +848,7 @@ export default function ChatPage() {
                         </div>
                       </div>
                       <div className="flex items-start gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0" style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}` }}>🎯</div>
+                        <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ border: `1px solid ${SILVER_DIM}` }}><img src="/avatar.jpg" alt="조던" className="w-full h-full object-cover" /></div>
                         <div className="px-4 py-3 rounded-2xl rounded-tl-sm text-sm max-w-[75%]" style={{ backgroundColor: "rgba(255,255,255,0.05)", border: `1px solid ${SILVER_FAINT}`, color: "#e0e8f0" }}>
                           {pair.assistant.content}
                         </div>
