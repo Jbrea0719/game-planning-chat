@@ -130,10 +130,17 @@ export async function POST(request: Request) {
 
         // Supabase 저장 후 스트림 종료 (저장 전 종료 시 데이터 유실 방지)
         if (session_id && pair_id) {
-          await supabase.from("messages").insert([
+          const { error: dbError } = await supabase.from("messages").insert([
             { session_id, pair_id, role: "user", content: userMessage.content, universes: "전체", is_deleted: false },
             { session_id, pair_id, role: "assistant", content: assistantText, universes: "전체", is_deleted: false },
           ]);
+          if (dbError) {
+            console.error("[chat] Supabase 저장 실패:", dbError.message, dbError.code);
+          } else {
+            console.log("[chat] Supabase 저장 성공:", session_id, pair_id);
+          }
+        } else {
+          console.warn("[chat] session_id 또는 pair_id 없음 — 저장 건너뜀");
         }
         controller.close();
       },
