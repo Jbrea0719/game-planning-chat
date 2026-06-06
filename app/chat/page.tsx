@@ -34,6 +34,58 @@ const SILVER = "#c0c8d8";
 const SILVER_DIM = "rgba(192,200,216,0.5)";
 const SILVER_FAINT = "rgba(192,200,216,0.15)";
 
+function DocImage({ src, alt }: { src?: string; alt?: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  if (failed || !src) return null;
+  return (
+    <figure style={{ margin: "16px 0", textAlign: "center" }}>
+      {!loaded && (
+        <div
+          className="animate-pulse"
+          style={{
+            height: "180px",
+            borderRadius: "8px",
+            background: "rgba(192,200,216,0.08)",
+            border: "1px solid rgba(192,200,216,0.15)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <span style={{ color: "rgba(192,200,216,0.4)", fontSize: "12px" }}>
+            🎨 이미지 생성 중...
+          </span>
+        </div>
+      )}
+      <img
+        src={src}
+        alt={alt}
+        onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
+        style={{
+          display: loaded ? "block" : "none",
+          maxWidth: "100%",
+          borderRadius: "8px",
+          border: "1px solid rgba(192,200,216,0.2)",
+          margin: "0 auto",
+        }}
+      />
+      {loaded && alt && (
+        <figcaption
+          style={{
+            fontSize: "11px",
+            color: "rgba(192,200,216,0.5)",
+            marginTop: "6px",
+          }}
+        >
+          {alt}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
 // **"텍스트"** 패턴에서 따옴표를 제거해 마크다운 bold가 깨지지 않도록 전처리
 function fixMarkdown(text: string): string {
   return text
@@ -64,6 +116,8 @@ export default function ChatPage() {
   const [docLoading, setDocLoading] = useState(false);
   const [showDocModal, setShowDocModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [docEnriched, setDocEnriched] = useState(false);
+  const [docImageLoading, setDocImageLoading] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedPairIds, setSelectedPairIds] = useState<Set<string>>(new Set());
   const [userProfile, setUserProfile] = useState("");
@@ -396,6 +450,7 @@ export default function ChatPage() {
 
     setSelectMode(false);
     setDocContent("");
+    setDocEnriched(false);
     setDocLoading(true);
     setShowDocModal(true);
 
@@ -426,6 +481,40 @@ export default function ChatPage() {
     await navigator.clipboard.writeText(docContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function enrichDocWithImages() {
+    if (!docContent || docEnriched || docImageLoading) return;
+    setDocImageLoading(true);
+    try {
+      const res = await fetch("/api/image-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: docContent }),
+      });
+      const data = await res.json();
+      if (!data.suggestions?.length) return;
+
+      let enriched = docContent;
+      // 뒤에서부터 삽입해서 앞쪽 인덱스가 밀리지 않도록 처리
+      const sorted = [...data.suggestions].reverse();
+      for (const sug of sorted) {
+        const idx = enriched.indexOf(sug.heading);
+        if (idx === -1) continue;
+        const lineEnd = enriched.indexOf("\n", idx + sug.heading.length);
+        if (lineEnd === -1) continue;
+        const prompt = (sug.prompt as string).slice(0, 300);
+        const encodedPrompt = encodeURIComponent(prompt);
+        const imgMd = `\n\n![${sug.alt}](https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=420&nologo=true&model=flux)\n`;
+        enriched = enriched.slice(0, lineEnd + 1) + imgMd + enriched.slice(lineEnd + 1);
+      }
+      setDocContent(enriched);
+      setDocEnriched(true);
+    } catch {
+      // 실패 시 조용히 종료
+    } finally {
+      setDocImageLoading(false);
+    }
   }
 
   function getDateStr() {
@@ -559,6 +648,16 @@ export default function ChatPage() {
                 {docLoading && <span className="text-xs animate-pulse" style={{ color: SILVER_DIM }}>작성 중...</span>}
               </div>
               <div className="flex items-center gap-2">
+                {!docLoading && docContent && !docEnriched && (
+                  <button
+                    onClick={enrichDocWithImages}
+                    disabled={docImageLoading}
+                    className="text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
+                    style={{ backgroundColor: docImageLoading ? SILVER_FAINT : "rgba(125,211,252,0.15)", border: `1px solid ${docImageLoading ? SILVER_DIM : "rgba(125,211,252,0.5)"}`, color: docImageLoading ? SILVER_DIM : "#7dd3fc" }}
+                  >
+                    {docImageLoading ? "⏳ 분석 중..." : "✨ 이미지 추가"}
+                  </button>
+                )}
                 {!docLoading && docContent && (
                   <button
                     onClick={copyDocument}
@@ -586,7 +685,13 @@ export default function ChatPage() {
               )}
               {docContent && (
                 <div className="prose prose-sm max-w-none" style={{ color: "#e0e8f0" }}>
-                  <ReactMarkdown>{fixMarkdown(docContent)}</ReactMarkdown>
+                  <ReactMarkdown
+                    components={{
+                      img: (props) => <DocImage src={typeof props.src === "string" ? props.src : undefined} alt={props.alt} />,
+                    }}
+                  >
+                    {fixMarkdown(docContent)}
+                  </ReactMarkdown>
                 </div>
               )}
             </div>
