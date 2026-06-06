@@ -21,6 +21,23 @@ type MessagePair = {
   timestamp?: string;
 };
 
+// 이미지 미리보기 항목 — 적용 전 조정 단계에서 사용
+type PreviewItem = {
+  key: string;
+  heading: string;             // 삽입될 섹션 헤딩
+  type: "diagram" | "mockup";
+  alt: string;
+  mermaid?: string;            // diagram
+  prompt?: string;             // mockup
+  seed?: number;               // mockup 이미지 변형용
+  regenerating?: boolean;      // 재생성 진행 중
+};
+
+function mockupUrl(prompt: string, seed: number): string {
+  const p = encodeURIComponent(prompt.slice(0, 300));
+  return `https://image.pollinations.ai/prompt/${p}?width=800&height=480&nologo=true&model=flux&seed=${seed}`;
+}
+
 function getTime() {
   const now = new Date();
   const h = now.getHours();
@@ -183,7 +200,6 @@ export default function ChatPage() {
   const [showDocModal, setShowDocModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [docEnriched, setDocEnriched] = useState(false);
-  const [docImageLoading, setDocImageLoading] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedPairIds, setSelectedPairIds] = useState<Set<string>>(new Set());
   const [userProfile, setUserProfile] = useState("");
@@ -193,6 +209,9 @@ export default function ChatPage() {
   const [docList, setDocList] = useState<{ id: string; title: string; created_at: string; has_images: boolean }[]>([]);
   const [docListLoading, setDocListLoading] = useState(false);
   const [currentDocId, setCurrentDocId] = useState<string | null>(null);
+  const [showImagePreview, setShowImagePreview] = useState(false);
+  const [previewItems, setPreviewItems] = useState<PreviewItem[]>([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const profileUpdateCountRef = useRef(0);
   const userScrolledUpRef = useRef(false);    // 스트리밍 중 사용자가 위로 스크롤했는지
   const isSubLoadingRef = useRef(false);      // loadDetail 진행 중 여부
@@ -565,7 +584,8 @@ export default function ChatPage() {
           if (data.id) setCurrentDocId(data.id);
         } catch { /* 저장 실패해도 화면 표시는 유지 */ }
       }
-      enrichDocWithImages();
+      // 생성 직후 이미지 후보 미리보기 팝업 자동 오픈 (적용은 사용자가 결정)
+      startImagePreview();
     }
   }
 
@@ -583,12 +603,14 @@ export default function ChatPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  async function enrichDocWithImages() {
-    // 항상 이미지 삽입 전 원본에서 새로 생성 (재실행 시 이전 이미지 교체, 중복 방지)
+  // 1단계: 이미지 후보를 받아 미리보기 팝업을 연다 (즉시 적용 X)
+  async function startImagePreview() {
     if (!docBaseRef.current) docBaseRef.current = docContent;
     const base = docBaseRef.current;
-    if (!base || docImageLoading) return;
-    setDocImageLoading(true);
+    if (!base || previewLoading) return;
+    setShowImagePreview(true);
+    setPreviewItems([]);
+    setPreviewLoading(true);
     try {
       const res = await fetch("/api/image-suggest", {
         method: "POST",
@@ -596,43 +618,92 @@ export default function ChatPage() {
         body: JSON.stringify({ content: base }),
       });
       const data = await res.json();
-      if (!data.suggestions?.length) return;
-
-      let enriched = base;
-      // 뒤에서부터 삽입해서 앞쪽 인덱스가 밀리지 않도록 처리
-      const sorted = [...data.suggestions].reverse();
-      for (const sug of sorted) {
-        const idx = enriched.indexOf(sug.heading);
-        if (idx === -1) continue;
-        const lineEnd = enriched.indexOf("\n", idx + sug.heading.length);
-        if (lineEnd === -1) continue;
-
-        let insertMd = "";
-        if (sug.type === "diagram" && sug.mermaid) {
-          insertMd = `\n\n\`\`\`mermaid\n${sug.mermaid}\n\`\`\`\n`;
-        } else if (sug.type === "mockup" && sug.prompt) {
-          const encodedPrompt = encodeURIComponent((sug.prompt as string).slice(0, 300));
-          insertMd = `\n\n![${sug.alt}](https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=480&nologo=true&model=flux)\n`;
-        }
-
-        if (insertMd) {
-          enriched = enriched.slice(0, lineEnd + 1) + insertMd + enriched.slice(lineEnd + 1);
-        }
-      }
-      setDocContent(enriched);
-      setDocEnriched(true);
-      // 이미지 버전 DB 저장 (재실행 시 덮어씀)
-      if (currentDocId) {
-        fetch("/api/documents", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: currentDocId, enriched_content: enriched }),
-        }).catch(() => {});
-      }
+      const items: PreviewItem[] = (data.suggestions ?? [])
+        .filter((s: { heading?: string }) => s.heading && base.includes(s.heading))
+        .map((s: { heading: string; type: string; alt?: string; mermaid?: string; prompt?: string }, i: number) => ({
+          key: `${Date.now()}-${i}`,
+          heading: s.heading,
+          type: s.type === "diagram" ? "diagram" : "mockup",
+          alt: s.alt ?? "이미지",
+          mermaid: s.mermaid,
+          prompt: s.prompt,
+          seed: Math.floor(Math.random() * 1_000_000),
+        }));
+      setPreviewItems(items);
     } catch {
-      // 실패 시 조용히 종료
+      setPreviewItems([]);
     } finally {
-      setDocImageLoading(false);
+      setPreviewLoading(false);
+    }
+  }
+
+  function removePreviewItem(key: string) {
+    setPreviewItems((prev) => prev.filter((it) => it.key !== key));
+  }
+
+  // 항목별 재생성: mockup은 seed 변경(즉시), diagram은 API 재호출
+  async function regeneratePreviewItem(key: string) {
+    const item = previewItems.find((it) => it.key === key);
+    if (!item) return;
+
+    if (item.type === "mockup") {
+      setPreviewItems((prev) => prev.map((it) =>
+        it.key === key ? { ...it, seed: Math.floor(Math.random() * 1_000_000) } : it));
+      return;
+    }
+
+    // diagram 재생성
+    setPreviewItems((prev) => prev.map((it) => it.key === key ? { ...it, regenerating: true } : it));
+    try {
+      const res = await fetch("/api/image-regenerate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "diagram", heading: item.heading, content: docBaseRef.current }),
+      });
+      const data = await res.json();
+      if (data.mermaid) {
+        setPreviewItems((prev) => prev.map((it) =>
+          it.key === key ? { ...it, mermaid: data.mermaid, alt: data.alt ?? it.alt, regenerating: false } : it));
+        return;
+      }
+    } catch { /* 실패 시 아래에서 로딩만 해제 */ }
+    setPreviewItems((prev) => prev.map((it) => it.key === key ? { ...it, regenerating: false } : it));
+  }
+
+  // 2단계: 미리보기 항목을 본문에 실제 반영하고 DB 저장
+  function applyImagePreview() {
+    const base = docBaseRef.current;
+    if (!base) { setShowImagePreview(false); return; }
+
+    // 문서 등장 순서 내림차순으로 정렬해 뒤에서부터 삽입 (앞 인덱스 보존)
+    const ordered = [...previewItems]
+      .map((it) => ({ it, idx: base.indexOf(it.heading) }))
+      .filter((x) => x.idx !== -1)
+      .sort((a, b) => b.idx - a.idx);
+
+    let enriched = base;
+    for (const { it, idx } of ordered) {
+      const lineEnd = enriched.indexOf("\n", idx + it.heading.length);
+      if (lineEnd === -1) continue;
+      let insertMd = "";
+      if (it.type === "diagram" && it.mermaid) {
+        insertMd = `\n\n\`\`\`mermaid\n${it.mermaid}\n\`\`\`\n`;
+      } else if (it.type === "mockup" && it.prompt) {
+        insertMd = `\n\n![${it.alt}](${mockupUrl(it.prompt, it.seed ?? 0)})\n`;
+      }
+      if (insertMd) enriched = enriched.slice(0, lineEnd + 1) + insertMd + enriched.slice(lineEnd + 1);
+    }
+
+    setDocContent(enriched);
+    setDocEnriched(previewItems.length > 0);
+    setShowImagePreview(false);
+
+    if (currentDocId) {
+      fetch("/api/documents", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: currentDocId, enriched_content: previewItems.length > 0 ? enriched : null }),
+      }).catch(() => {});
     }
   }
 
@@ -870,6 +941,97 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* 이미지 미리보기 모달 (적용 전 조정 단계) */}
+      {showImagePreview && (
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-[60] p-4">
+          <div className="rounded-2xl w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl" style={{ backgroundColor: "#0f1628", border: `1px solid ${SILVER_FAINT}` }}>
+            {/* 헤더 */}
+            <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: `1px solid ${SILVER_FAINT}` }}>
+              <div className="flex items-center gap-2">
+                <span style={{ color: "#7dd3fc" }}>🎨</span>
+                <h2 className="text-sm font-bold" style={{ color: SILVER }}>이미지 미리보기</h2>
+                {!previewLoading && <span className="text-xs" style={{ color: SILVER_DIM }}>{previewItems.length}개</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={applyImagePreview}
+                  disabled={previewLoading}
+                  className="text-xs px-3 py-1.5 rounded-lg font-bold disabled:opacity-40"
+                  style={{ backgroundColor: "#7dd3fc", color: "#0a0e1a" }}
+                >
+                  ✓ 적용
+                </button>
+                <button
+                  onClick={() => setShowImagePreview(false)}
+                  className="text-xs px-3 py-1.5 rounded-lg"
+                  style={{ backgroundColor: SILVER_FAINT, color: SILVER_DIM }}
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+            {/* 본문 */}
+            <div className="flex-1 overflow-y-auto px-5 py-4" style={{ scrollbarWidth: "thin", scrollbarColor: `${SILVER_DIM} transparent` }}>
+              {previewLoading && (
+                <div className="py-12 text-center">
+                  <span className="animate-pulse text-sm" style={{ color: SILVER_DIM }}>📊 이미지가 필요한 위치를 분석하고 있어요...</span>
+                </div>
+              )}
+              {!previewLoading && previewItems.length === 0 && (
+                <div className="py-12 text-center">
+                  <p className="text-sm" style={{ color: SILVER_DIM }}>추가할 이미지가 없습니다</p>
+                  <p className="text-xs mt-1" style={{ color: SILVER_DIM }}>적용을 누르면 이미지 없이 유지됩니다</p>
+                </div>
+              )}
+              {!previewLoading && previewItems.length > 0 && (
+                <div className="space-y-4">
+                  <p className="text-xs" style={{ color: SILVER_DIM }}>각 이미지가 들어갈 위치를 미리 확인하고, 마음에 들지 않으면 삭제하거나 다시 만들 수 있어요.</p>
+                  {previewItems.map((item) => (
+                    <div key={item.key} className="rounded-xl p-4" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: `1px solid ${SILVER_FAINT}` }}>
+                      {/* 위치 + 타입 */}
+                      <div className="flex items-center justify-between mb-2 gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-xs px-2 py-0.5 rounded flex-shrink-0" style={{ backgroundColor: item.type === "diagram" ? "rgba(125,211,252,0.15)" : "rgba(192,200,216,0.15)", color: item.type === "diagram" ? "#7dd3fc" : SILVER }}>
+                            {item.type === "diagram" ? "📊 다이어그램" : "🖼️ UI 목업"}
+                          </span>
+                          <span className="text-xs truncate" style={{ color: SILVER_DIM }}>📍 {item.heading.replace(/^#+\s*/, "")}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button
+                            onClick={() => regeneratePreviewItem(item.key)}
+                            disabled={item.regenerating}
+                            className="text-xs px-2 py-1 rounded-lg disabled:opacity-50"
+                            style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}`, color: SILVER }}
+                          >
+                            {item.regenerating ? "⏳" : "🔄 재생성"}
+                          </button>
+                          <button
+                            onClick={() => removePreviewItem(item.key)}
+                            className="text-xs px-2 py-1 rounded-lg"
+                            style={{ backgroundColor: "rgba(255,50,50,0.1)", border: "1px solid rgba(255,50,50,0.2)", color: "#f87171" }}
+                          >
+                            🗑️ 삭제
+                          </button>
+                        </div>
+                      </div>
+                      {/* 미리보기 렌더 */}
+                      <div style={{ opacity: item.regenerating ? 0.4 : 1 }}>
+                        {item.type === "diagram" && item.mermaid && (
+                          <MermaidDiagram key={item.mermaid} code={item.mermaid} />
+                        )}
+                        {item.type === "mockup" && item.prompt && (
+                          <DocImage key={item.seed} src={mockupUrl(item.prompt, item.seed ?? 0)} alt={item.alt} />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 기획서 모달 */}
       {showDocModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
@@ -882,18 +1044,13 @@ export default function ChatPage() {
                 {docLoading && <span className="text-xs animate-pulse" style={{ color: SILVER_DIM }}>작성 중...</span>}
               </div>
               <div className="flex items-center gap-2">
-                {!docLoading && docImageLoading && (
-                  <span className="text-xs flex items-center gap-1.5" style={{ color: "#7dd3fc" }}>
-                    <span className="animate-pulse">✨</span> 이미지 생성 중...
-                  </span>
-                )}
-                {!docLoading && !docImageLoading && docContent && (
+                {!docLoading && docContent && (
                   <button
-                    onClick={() => enrichDocWithImages()}
+                    onClick={() => startImagePreview()}
                     className="text-xs px-3 py-1.5 rounded-lg font-medium"
                     style={{ backgroundColor: "rgba(125,211,252,0.15)", border: "1px solid rgba(125,211,252,0.5)", color: "#7dd3fc" }}
                   >
-                    {docEnriched ? "🔄 이미지 다시 생성" : "✨ 이미지 추가"}
+                    {docEnriched ? "🔄 이미지 다시 고르기" : "✨ 이미지 추가"}
                   </button>
                 )}
                 {!docLoading && docContent && (
