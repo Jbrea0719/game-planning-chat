@@ -192,6 +192,7 @@ export default function ChatPage() {
   const profileUpdateCountRef = useRef(0);
   const userScrolledUpRef = useRef(false);    // 스트리밍 중 사용자가 위로 스크롤했는지
   const isSubLoadingRef = useRef(false);      // loadDetail 진행 중 여부
+  const docBaseRef = useRef("");              // 이미지 삽입 전 원본 기획서 (재실행 시 깨끗한 원본에서 다시 생성)
   const abortControllerRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -517,6 +518,7 @@ export default function ChatPage() {
     setSelectMode(false);
     setDocContent("");
     setDocEnriched(false);
+    docBaseRef.current = "";
     setDocLoading(true);
     setShowDocModal(true);
 
@@ -544,8 +546,11 @@ export default function ChatPage() {
       setDocLoading(false);
     }
 
-    // 기획서 생성 완료 → 이미지 자동 삽입
-    if (finalText) enrichDocWithImages(finalText);
+    // 기획서 생성 완료 → 원본 보관 후 이미지 자동 삽입
+    if (finalText) {
+      docBaseRef.current = finalText;
+      enrichDocWithImages();
+    }
   }
 
   async function copyDocument() {
@@ -554,20 +559,22 @@ export default function ChatPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  async function enrichDocWithImages(baseContent?: string) {
-    const source = baseContent ?? docContent;
-    if (!source || docEnriched || docImageLoading) return;
+  async function enrichDocWithImages() {
+    // 항상 이미지 삽입 전 원본에서 새로 생성 (재실행 시 이전 이미지 교체, 중복 방지)
+    if (!docBaseRef.current) docBaseRef.current = docContent;
+    const base = docBaseRef.current;
+    if (!base || docImageLoading) return;
     setDocImageLoading(true);
     try {
       const res = await fetch("/api/image-suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: source }),
+        body: JSON.stringify({ content: base }),
       });
       const data = await res.json();
       if (!data.suggestions?.length) return;
 
-      let enriched = source;
+      let enriched = base;
       // 뒤에서부터 삽입해서 앞쪽 인덱스가 밀리지 않도록 처리
       const sorted = [...data.suggestions].reverse();
       for (const sug of sorted) {
@@ -733,13 +740,13 @@ export default function ChatPage() {
                     <span className="animate-pulse">✨</span> 이미지 생성 중...
                   </span>
                 )}
-                {!docLoading && !docImageLoading && docContent && !docEnriched && (
+                {!docLoading && !docImageLoading && docContent && (
                   <button
                     onClick={() => enrichDocWithImages()}
                     className="text-xs px-3 py-1.5 rounded-lg font-medium"
                     style={{ backgroundColor: "rgba(125,211,252,0.15)", border: "1px solid rgba(125,211,252,0.5)", color: "#7dd3fc" }}
                   >
-                    ✨ 이미지 추가
+                    {docEnriched ? "🔄 이미지 다시 생성" : "✨ 이미지 추가"}
                   </button>
                 )}
                 {!docLoading && docContent && (
