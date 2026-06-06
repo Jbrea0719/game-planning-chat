@@ -189,6 +189,10 @@ export default function ChatPage() {
   const [userProfile, setUserProfile] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showCompleteBtn, setShowCompleteBtn] = useState(false);
+  const [showDocListModal, setShowDocListModal] = useState(false);
+  const [docList, setDocList] = useState<{ id: string; title: string; created_at: string; has_images: boolean }[]>([]);
+  const [docListLoading, setDocListLoading] = useState(false);
+  const [currentDocId, setCurrentDocId] = useState<string | null>(null);
   const profileUpdateCountRef = useRef(0);
   const userScrolledUpRef = useRef(false);    // 스트리밍 중 사용자가 위로 스크롤했는지
   const isSubLoadingRef = useRef(false);      // loadDetail 진행 중 여부
@@ -518,6 +522,7 @@ export default function ChatPage() {
     setSelectMode(false);
     setDocContent("");
     setDocEnriched(false);
+    setCurrentDocId(null);
     docBaseRef.current = "";
     setDocLoading(true);
     setShowDocModal(true);
@@ -546,11 +551,30 @@ export default function ChatPage() {
       setDocLoading(false);
     }
 
-    // 기획서 생성 완료 → 원본 보관 후 이미지 자동 삽입
+    // 기획서 생성 완료 → DB 저장 후 원본 보관 + 이미지 자동 삽입
     if (finalText) {
       docBaseRef.current = finalText;
+      if (sessionId) {
+        try {
+          const res = await fetch("/api/documents", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: sessionId, title: extractDocTitle(finalText), content: finalText }),
+          });
+          const data = await res.json();
+          if (data.id) setCurrentDocId(data.id);
+        } catch { /* 저장 실패해도 화면 표시는 유지 */ }
+      }
       enrichDocWithImages();
     }
+  }
+
+  // 기획서 본문에서 제목 추출 (첫 # 헤딩, 없으면 첫 줄)
+  function extractDocTitle(content: string): string {
+    const h1 = content.match(/^#\s+(.+)$/m);
+    if (h1) return h1[1].replace(/기획서$/, "").trim() || "기획서";
+    const firstLine = content.split("\n").find((l) => l.trim());
+    return (firstLine ?? "제목 없음").replace(/^#+\s*/, "").slice(0, 40).trim() || "제목 없음";
   }
 
   async function copyDocument() {
@@ -597,11 +621,80 @@ export default function ChatPage() {
       }
       setDocContent(enriched);
       setDocEnriched(true);
+      // 이미지 버전 DB 저장 (재실행 시 덮어씀)
+      if (currentDocId) {
+        fetch("/api/documents", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: currentDocId, enriched_content: enriched }),
+        }).catch(() => {});
+      }
     } catch {
       // 실패 시 조용히 종료
     } finally {
       setDocImageLoading(false);
     }
+  }
+
+  async function openDocList() {
+    if (!sessionId) return;
+    setShowDocListModal(true);
+    setDocListLoading(true);
+    try {
+      const res = await fetch(`/api/documents?session_id=${encodeURIComponent(sessionId)}`);
+      const data = await res.json();
+      setDocList(data.documents ?? []);
+    } catch {
+      setDocList([]);
+    } finally {
+      setDocListLoading(false);
+    }
+  }
+
+  async function openSavedDoc(id: string) {
+    setShowDocListModal(false);
+    setDocContent("");
+    setDocEnriched(false);
+    setCurrentDocId(id);
+    docBaseRef.current = "";
+    setDocLoading(true);
+    setShowDocModal(true);
+    try {
+      const res = await fetch(`/api/documents?id=${encodeURIComponent(id)}`);
+      const data = await res.json();
+      const doc = data.document;
+      if (!doc) throw new Error("not found");
+      docBaseRef.current = doc.content;
+      setDocContent(doc.enriched_content || doc.content);
+      setDocEnriched(!!doc.enriched_content);
+    } catch {
+      setDocContent("기획서를 불러오지 못했습니다.");
+    } finally {
+      setDocLoading(false);
+    }
+  }
+
+  async function deleteSavedDoc(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirm("이 기획서를 삭제할까요?")) return;
+    setDocList((prev) => prev.filter((d) => d.id !== id));
+    if (currentDocId === id) setCurrentDocId(null);
+    await fetch("/api/documents", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
+  }
+
+  function formatDocDate(iso: string): string {
+    try {
+      const d = new Date(iso);
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const h = String(d.getHours()).padStart(2, "0");
+      const min = String(d.getMinutes()).padStart(2, "0");
+      return `${d.getFullYear()}.${m}.${day} ${h}:${min}`;
+    } catch { return ""; }
   }
 
   function getDateStr() {
@@ -723,6 +816,60 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* 기획서 목록 모달 */}
+      {showDocListModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setShowDocListModal(false)}>
+          <div className="rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl" style={{ backgroundColor: "#0f1628", border: `1px solid ${SILVER_FAINT}` }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: `1px solid ${SILVER_FAINT}` }}>
+              <div className="flex items-center gap-2">
+                <span style={{ color: SILVER }}>📁</span>
+                <h2 className="text-sm font-bold" style={{ color: SILVER }}>내 기획서</h2>
+                {!docListLoading && <span className="text-xs" style={{ color: SILVER_DIM }}>{docList.length}개</span>}
+              </div>
+              <button onClick={() => setShowDocListModal(false)} className="text-xs px-3 py-1.5 rounded-lg" style={{ backgroundColor: SILVER_FAINT, color: SILVER_DIM }}>닫기</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3" style={{ scrollbarWidth: "thin", scrollbarColor: `${SILVER_DIM} transparent` }}>
+              {docListLoading && (
+                <div className="py-10 text-center"><span className="animate-pulse text-sm" style={{ color: SILVER_DIM }}>불러오는 중...</span></div>
+              )}
+              {!docListLoading && docList.length === 0 && (
+                <div className="py-10 text-center">
+                  <p className="text-sm" style={{ color: SILVER_DIM }}>저장된 기획서가 없어요</p>
+                  <p className="text-xs mt-1" style={{ color: SILVER_DIM }}>대화 후 우상단 &quot;📄 기획서 작성&quot;으로 만들어보세요</p>
+                </div>
+              )}
+              {!docListLoading && docList.length > 0 && (
+                <div className="space-y-2">
+                  {docList.map((doc) => (
+                    <div
+                      key={doc.id}
+                      onClick={() => openSavedDoc(doc.id)}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-colors"
+                      style={{ backgroundColor: "rgba(255,255,255,0.04)", border: `1px solid ${SILVER_FAINT}` }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: "#e0e8f0" }}>{doc.title}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs" style={{ color: SILVER_DIM }}>{formatDocDate(doc.created_at)}</span>
+                          {doc.has_images && <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: "rgba(125,211,252,0.15)", color: "#7dd3fc" }}>🎨 이미지</span>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => deleteSavedDoc(doc.id, e)}
+                        className="text-xs px-2 py-1 rounded-lg flex-shrink-0"
+                        style={{ backgroundColor: "rgba(255,50,50,0.1)", border: "1px solid rgba(255,50,50,0.2)", color: "#f87171" }}
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 기획서 모달 */}
       {showDocModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
@@ -806,6 +953,15 @@ export default function ChatPage() {
           <p className="text-xs" style={{ color: SILVER_DIM }}>영웅수집형 게임 기획 전문가 · 가챠 · 밸런스 · BM · 컨텐츠 설계</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {!selectMode && (
+            <button
+              onClick={openDocList}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium"
+              style={{ backgroundColor: SILVER_FAINT, border: `1px solid ${SILVER_DIM}`, color: SILVER }}
+            >
+              📁 내 기획서
+            </button>
+          )}
           {activePairs.length > 0 && !selectMode && (
             <button
               onClick={enterSelectMode}
